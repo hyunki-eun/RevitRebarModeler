@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>RevitRebarModeler</Name>
+    <Assembly>RevitRebarModeler.dll</Assembly>
+    <FullClassName>RevitRebarModeler.App</FullClassName>
+    <AddInId>E01C4E10-70A1-4DA1-93A5-5454B8276302</AddInId>
+    <VendorId>GeoTunnelDev</VendorId>
+    <VendorDescription>Geotechnical Tunnel Division R&amp;D</VendorDescription>
+  </AddIn>
+</RevitAddIns>

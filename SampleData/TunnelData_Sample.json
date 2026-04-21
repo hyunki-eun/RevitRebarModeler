@@ -1,0 +1,110 @@
+{
+  "ProjectName": "OO터널 본선",
+  "Units": "mm",
+  "CoordinateSystem": {
+    "Description": "Civil3D 2D 단면 -> Revit 3D 변환 규칙",
+    "CadX": "Revit X (횡단 방향)",
+    "CadY": "Revit Z (높이 방향)",
+    "Station": "Revit Y (종방향, 터널 축)"
+  },
+
+  "Zones": [
+    {
+      "ZoneName": "Zone-A",
+      "StationRange": { "Start": 0, "End": 8200 },
+      "Description": "표준 단면 구간",
+
+      "Section": {
+        "InnerProfile": {
+          "Points": [
+            { "X": -5000, "Y": 0 },
+            { "X": -5000, "Y": 3000 },
+            { "X": -4500, "Y": 5500 },
+            { "X": 0,     "Y": 6500 },
+            { "X": 4500,  "Y": 5500 },
+            { "X": 5000,  "Y": 3000 },
+            { "X": 5000,  "Y": 0 }
+          ],
+          "Bulges": [ 0, 0, 0.25, 0.3, 0.25, 0, 0 ],
+          "Closed": true
+        },
+        "OuterProfile": {
+          "Points": [
+            { "X": -5400, "Y": -200 },
+            { "X": -5400, "Y": 3100 },
+            { "X": -4900, "Y": 5900 },
+            { "X": 0,     "Y": 6900 },
+            { "X": 4900,  "Y": 5900 },
+            { "X": 5400,  "Y": 3100 },
+            { "X": 5400,  "Y": -200 }
+          ],
+          "Bulges": [ 0, 0, 0.25, 0.3, 0.25, 0, 0 ],
+          "Closed": true
+        }
+      },
+
+      "TransverseRebars": [
+        {
+          "RebarName": "내측 주철근",
+          "Layer": "H13_1Cycle_8200",
+          "DiameterLabel": "H13",
+          "CycleNumber": 1,
+          "Polyline": {
+            "Points": [
+              { "X": -4800, "Y": 200 },
+              { "X": -4800, "Y": 3050 },
+              { "X": -4300, "Y": 5450 },
+              { "X": 0,     "Y": 6400 },
+              { "X": 4300,  "Y": 5450 },
+              { "X": 4800,  "Y": 3050 },
+              { "X": 4800,  "Y": 200 }
+            ],
+            "Bulges": [ 0, 0, 0.25, 0.3, 0.25, 0, 0 ],
+            "Closed": false
+          }
+        },
+        {
+          "RebarName": "외측 주철근",
+          "Layer": "H16_1Cycle_8200",
+          "DiameterLabel": "H16",
+          "CycleNumber": 1,
+          "Polyline": {
+            "Points": [
+              { "X": -5200, "Y": -100 },
+              { "X": -5200, "Y": 3080 },
+              { "X": -4700, "Y": 5700 },
+              { "X": 0,     "Y": 6700 },
+              { "X": 4700,  "Y": 5700 },
+              { "X": 5200,  "Y": 3080 },
+              { "X": 5200,  "Y": -100 }
+            ],
+            "Bulges": [ 0, 0, 0.25, 0.3, 0.25, 0, 0 ],
+            "Closed": false
+          }
+        }
+      ],
+
+      "LongitudinalRebars": [
+        {
+          "RebarName": "종방향 내측",
+          "DiameterLabel": "H19",
+          "ProfileReference": "InnerProfile",
+          "OffsetFromProfile": 80,
+          "Spacing": 200,
+          "Direction": "Station"
+        }
+      ],
+
+      "ShearRebars": [
+        {
+          "RebarName": "전단보강 철근",
+          "DiameterLabel": "H10",
+          "Spacing": 300,
+          "LegCount": 2,
+          "ProfileReference": "InnerProfile",
+          "HeightRange": { "YStart": 0, "YEnd": 3000 }
+        }
+      ]
+    }
+  ]
+}

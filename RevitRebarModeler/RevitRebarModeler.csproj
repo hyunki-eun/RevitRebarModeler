@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+    <LangVersion>9.0</LangVersion>
+    <RootNamespace>RevitRebarModeler</RootNamespace>
+    <AssemblyName>RevitRebarModeler</AssemblyName>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputType>Library</OutputType>
+    <UseWPF>true</UseWPF>
+
+    <!-- 디버깅: F5로 Revit 실행 -->
+    <StartAction>Program</StartAction>
+    <StartProgram>C:\Program Files\Autodesk\Revit 2024\Revit.exe</StartProgram>
+
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+
+    <RevitPath>C:\Program Files\Autodesk\Revit 2024</RevitPath>
+  </PropertyGroup>
+
+  <!-- NuGet 패키지 -->
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <!-- Revit API 참조 -->
+  <ItemGroup>
+    <Reference Include="RevitAPI">
+      <HintPath>$(RevitPath)\RevitAPI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="RevitAPIUI">
+      <HintPath>$(RevitPath)\RevitAPIUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- WPF -->
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="System.Xaml" />
+  </ItemGroup>
+
+</Project>
