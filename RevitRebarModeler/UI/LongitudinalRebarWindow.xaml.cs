@@ -240,7 +240,7 @@ namespace RevitRebarModeler.UI
         {
             if (item.Count <= 0 || item.CtcMm <= 0)
             {
-                item.ForceStatus("입력값 오류 (갯수/CTC)", Brushes.Red);
+                item.ForceStatus("입력 오류", Brushes.IndianRed);
                 return;
             }
 
@@ -252,7 +252,7 @@ namespace RevitRebarModeler.UI
 
             if (targetChain == null || targetChain.Count == 0)
             {
-                item.ForceStatus("테스트 실패 (기준 선분 없음)", Brushes.Red);
+                item.ForceStatus("기준선 없음", Brushes.IndianRed);
                 return;
             }
 
@@ -261,20 +261,20 @@ namespace RevitRebarModeler.UI
                 bool offsetAway = item.Pos1 == "외측";
                 var offsetSegs = LongiCurveSampler.OffsetPolyline(targetChain, item.OffsetMm, item.BCx, item.BCy, offsetAway);
                 var testSamples = LongiCurveSampler.SampleFromCenterWithChordNormal(offsetSegs, item.CtcMm, item.Count);
-                int realCount = testSamples.Count * 2; 
+                int realCount = testSamples.Count * 2;
 
                 if (realCount == item.Count)
                 {
-                    item.ForceStatus($"[검증 완료] 목표 수량 {item.Count}개 정확히 배치 가능", Brushes.Blue);
+                    item.ForceStatus($"검증 OK · {item.Count}개", Brushes.SeaGreen);
                 }
                 else
                 {
-                    item.ForceStatus($"[검증 완료] 최적화 결과: 간격 유지를 위해 실제 {realCount}개 배치 가능", Brushes.DarkGreen);
+                    item.ForceStatus($"검증 OK · 실제 {realCount}개", Brushes.DarkOrange);
                 }
             }
             catch
             {
-                item.ForceStatus("테스트 에러 (곡선 연산 실패)", Brushes.Red);
+                item.ForceStatus("연산 실패", Brushes.IndianRed);
             }
         }
 
@@ -459,18 +459,16 @@ namespace RevitRebarModeler.UI
             var level = 0; // 0=OK, 1=warn, 2=error
 
             if (_count <= 0) { msgs.Add("갯수 필요"); level = Math.Max(level, 2); }
-            else if (_count % 2 != 0) { msgs.Add("갯수는 짝수"); level = Math.Max(level, 2); }
+            else if (_count % 2 != 0) { msgs.Add("갯수 짝수"); level = Math.Max(level, 2); }
             else
             {
                 int sets = _count / 2;
-                if (sets % 2 == 0) { msgs.Add($"4N+2 아님 → 중심 없이 대칭 배치"); level = Math.Max(level, 1); }
-                
-                msgs.Add("데이터 입력됨. 하단의 [상태 새로고침] 버튼을 눌러 정확한 배치 수량을 시뮬레이션 하세요.");
+                if (sets % 2 == 0) { msgs.Add("4N+2 아님"); level = Math.Max(level, 1); }
             }
 
             if (InnerPolylineCount == 0 || OuterPolylineCount == 0)
             {
-                msgs.Add("내측/외측 polyline 부족 (중앙 계산 불가)");
+                msgs.Add("내/외측 부족");
                 level = Math.Max(level, 1);
             }
 
@@ -478,13 +476,13 @@ namespace RevitRebarModeler.UI
 
             if (msgs.Count == 0)
             {
-                StatusText = "OK";
-                StatusBrush = Brushes.Green;
+                StatusText = "준비됨";
+                StatusBrush = Brushes.SteelBlue;
             }
             else
             {
-                StatusText = string.Join(" | ", msgs);
-                StatusBrush = level == 2 ? Brushes.Red : Brushes.DarkOrange;
+                StatusText = string.Join(" · ", msgs);
+                StatusBrush = level == 2 ? Brushes.IndianRed : Brushes.DarkOrange;
             }
         }
 

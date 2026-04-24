@@ -22,11 +22,19 @@ namespace RevitRebarModeler.UI
         public double DepthMm { get; private set; } = 1000;
 
         private ObservableCollection<RegionItem> _regionItems = new ObservableCollection<RegionItem>();
+        private Dictionary<string, CycleSharedState> _cycleStates = new Dictionary<string, CycleSharedState>();
 
         public CreateStructureWindow()
         {
             InitializeComponent();
             LstRegions.ItemsSource = _regionItems;
+
+            var view = CollectionViewSource.GetDefaultView(_regionItems);
+            view.GroupDescriptions.Clear();
+            view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(RegionItem.CycleKey)));
+            view.SortDescriptions.Clear();
+            view.SortDescriptions.Add(new SortDescription(nameof(RegionItem.CycleKey), ListSortDirection.Ascending));
+            view.SortDescriptions.Add(new SortDescription(nameof(RegionItem.RegionId), ListSortDirection.Ascending));
         }
 
         // ============================================================
@@ -56,10 +64,26 @@ namespace RevitRebarModeler.UI
                     return;
                 }
 
-                // 영역별 아이템 생성
+                // 사이클(구조도)별 공유 상태 생성
+                _cycleStates.Clear();
+                foreach (var cycle in LoadedData.StructureRegions)
+                {
+                    double totalArea = cycle.Regions?.Sum(r => r.Area) ?? 0;
+                    int count = cycle.Regions?.Count ?? 0;
+                    _cycleStates[cycle.CycleKey] = new CycleSharedState
+                    {
+                        CycleKey = cycle.CycleKey,
+                        TotalArea = totalArea,
+                        TotalCount = count,
+                        SelectedCount = count // 초기 전체 선택
+                    };
+                }
+
+                // 영역별 아이템 생성 (공유 상태 참조)
                 _regionItems.Clear();
                 foreach (var cycle in LoadedData.StructureRegions)
                 {
+                    _cycleStates.TryGetValue(cycle.CycleKey, out var state);
                     foreach (var region in cycle.Regions)
                     {
                         _regionItems.Add(new RegionItem
@@ -71,18 +95,20 @@ namespace RevitRebarModeler.UI
                             VertexCount = region.VertexCount,
                             Layer = region.Layer ?? "",
                             RegionData = region,
-                            ParentCycle = cycle
+                            ParentCycle = cycle,
+                            SharedState = state
                         });
                     }
                 }
 
                 UpdateSelectionInfo();
+                RecomputeAllGroupSelectedCounts();
                 BtnCreate.IsEnabled = true;
 
                 int totalRegions = _regionItems.Count;
-                var cycleKeys = _regionItems.Select(r => r.CycleKey).Distinct().ToList();
+                int cycleCount = _cycleStates.Count;
                 TxtInfo.Text = $"프로젝트: {LoadedData.ProjectName} | " +
-                               $"{cycleKeys.Count}개 사이클, 총 {totalRegions}개 영역";
+                               $"{cycleCount}개 사이클, 총 {totalRegions}개 영역";
             }
             catch (Exception ex)
             {
@@ -138,6 +164,7 @@ namespace RevitRebarModeler.UI
         {
             foreach (var item in _regionItems) item.IsChecked = true;
             ChkAll.IsChecked = true;
+            RecomputeAllGroupSelectedCounts();
             UpdateSelectionInfo();
         }
 
@@ -145,6 +172,7 @@ namespace RevitRebarModeler.UI
         {
             foreach (var item in _regionItems) item.IsChecked = false;
             ChkAll.IsChecked = false;
+            RecomputeAllGroupSelectedCounts();
             UpdateSelectionInfo();
         }
 
@@ -152,13 +180,48 @@ namespace RevitRebarModeler.UI
         {
             bool isChecked = ChkAll.IsChecked == true;
             foreach (var item in _regionItems) item.IsChecked = isChecked;
+            RecomputeAllGroupSelectedCounts();
             UpdateSelectionInfo();
         }
 
         private void RegionCheckBox_Click(object sender, RoutedEventArgs e)
         {
             UpdateHeaderCheckState();
+            RecomputeAllGroupSelectedCounts();
             UpdateSelectionInfo();
+        }
+
+        private void BtnGroupSelectAll_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(sender is Button btn) || !(btn.Tag is string cycleKey)) return;
+            foreach (var item in _regionItems.Where(r => r.CycleKey == cycleKey))
+                item.IsChecked = true;
+            UpdateHeaderCheckState();
+            RecomputeAllGroupSelectedCounts();
+            UpdateSelectionInfo();
+        }
+
+        private void BtnGroupDeselectAll_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(sender is Button btn) || !(btn.Tag is string cycleKey)) return;
+            foreach (var item in _regionItems.Where(r => r.CycleKey == cycleKey))
+                item.IsChecked = false;
+            UpdateHeaderCheckState();
+            RecomputeAllGroupSelectedCounts();
+            UpdateSelectionInfo();
+        }
+
+        private void RecomputeAllGroupSelectedCounts()
+        {
+            foreach (var kv in _cycleStates)
+            {
+                int sel = _regionItems.Count(r => r.CycleKey == kv.Key && r.IsChecked);
+                double selArea = _regionItems
+                    .Where(r => r.CycleKey == kv.Key && r.IsChecked)
+                    .Sum(r => r.AreaMm2);
+                kv.Value.SelectedCount = sel;
+                kv.Value.SelectedArea = selArea;
+            }
         }
 
         private void UpdateHeaderCheckState()
@@ -173,54 +236,56 @@ namespace RevitRebarModeler.UI
         {
             int checkedCount = _regionItems.Count(r => r.IsChecked);
             double totalArea = _regionItems.Where(r => r.IsChecked).Sum(r => r.AreaMm2);
-            TxtSelectionInfo.Text = $"선택: {checkedCount}/{_regionItems.Count}개 | " +
-                                    $"면적: {totalArea / 1_000_000:F2} m²";
-        }
-
-        // ============================================================
-        // 열 정렬
-        // ============================================================
-
-        private GridViewColumnHeader _lastHeaderClicked = null;
-        private ListSortDirection _lastDirection = ListSortDirection.Ascending;
-
-        private void LstRegions_ColumnHeaderClick(object sender, RoutedEventArgs e)
-        {
-            if (!(e.OriginalSource is GridViewColumnHeader header)) return;
-            if (header.Role == GridViewColumnHeaderRole.Padding) return;
-
-            string sortBy = null;
-            string headerText = header.Column?.Header?.ToString() ?? "";
-
-            switch (headerText)
-            {
-                case "사이클": sortBy = "CycleKey"; break;
-                case "영역": sortBy = "RegionId"; break;
-                case "면적 (m²)": sortBy = "AreaMm2"; break;
-                case "꼭짓점": sortBy = "VertexCount"; break;
-                default: return;
-            }
-
-            ListSortDirection direction;
-            if (header == _lastHeaderClicked)
-                direction = _lastDirection == ListSortDirection.Ascending
-                    ? ListSortDirection.Descending
-                    : ListSortDirection.Ascending;
-            else
-                direction = ListSortDirection.Ascending;
-
-            _lastHeaderClicked = header;
-            _lastDirection = direction;
-
-            var view = CollectionViewSource.GetDefaultView(LstRegions.ItemsSource);
-            view.SortDescriptions.Clear();
-            view.SortDescriptions.Add(new SortDescription(sortBy, direction));
+            TxtSelectionInfo.Text = $"전체 선택: {checkedCount}/{_regionItems.Count}개  ·  면적: {totalArea / 1_000_000:F2} m²";
         }
     }
 
-    // ============================================================
-    // 영역 아이템 ViewModel (간소화)
-    // ============================================================
+    /// <summary>
+    /// 사이클(구조도)별 공유 상태.
+    /// 같은 CycleKey의 모든 RegionItem이 같은 인스턴스를 참조.
+    /// </summary>
+    public class CycleSharedState : INotifyPropertyChanged
+    {
+        public string CycleKey { get; set; }
+        public int TotalCount { get; set; }
+        public double TotalArea { get; set; }
+
+        private int _selectedCount;
+        public int SelectedCount
+        {
+            get => _selectedCount;
+            set
+            {
+                if (_selectedCount != value)
+                {
+                    _selectedCount = value;
+                    Notify(nameof(SelectedCount));
+                }
+            }
+        }
+
+        private double _selectedArea;
+        public double SelectedArea
+        {
+            get => _selectedArea;
+            set
+            {
+                if (Math.Abs(_selectedArea - value) > 1e-3)
+                {
+                    _selectedArea = value;
+                    Notify(nameof(SelectedArea));
+                    Notify(nameof(SelectedAreaDisplay));
+                }
+            }
+        }
+
+        public string SelectedAreaDisplay => $"{_selectedArea / 1_000_000:F2}";
+        public string TotalAreaDisplay => $"{TotalArea / 1_000_000:F2}";
+
+        public event PropertyChangedEventHandler PropertyChanged;
+        private void Notify(string name) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
 
     public class RegionItem : INotifyPropertyChanged
     {
@@ -238,11 +303,16 @@ namespace RevitRebarModeler.UI
         public int VertexCount { get; set; }
         public string Layer { get; set; }
 
-        /// <summary>면적 표시 (m²)</summary>
         public string AreaDisplay => $"{AreaMm2 / 1_000_000:F4}";
 
         public StructureRegionData RegionData { get; set; }
         public StructureCycleData ParentCycle { get; set; }
+
+        public CycleSharedState SharedState { get; set; }
+
+        // 그룹 헤더 바인딩용 passthrough
+        public int GroupSelectedCount => SharedState?.SelectedCount ?? 0;
+        public string GroupAreaDisplay => SharedState?.SelectedAreaDisplay ?? "0";
 
         public event PropertyChangedEventHandler PropertyChanged;
         private void Notify(string name) =>

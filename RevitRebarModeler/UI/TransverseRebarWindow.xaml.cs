@@ -5,6 +5,8 @@ using System.ComponentModel;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
 
 using Microsoft.Win32;
 
@@ -21,13 +23,20 @@ namespace RevitRebarModeler.UI
         public Dictionary<string, double> SheetCtcMap { get; private set; }
 
         private ObservableCollection<RebarItem> _rebarItems = new ObservableCollection<RebarItem>();
-        private ObservableCollection<SheetCtcItem> _ctcItems = new ObservableCollection<SheetCtcItem>();
+        // 구조도별 공유 상태 (CTC, 선택수 등) — 같은 SheetKey의 모든 RebarItem이 공유.
+        private Dictionary<string, SheetSharedState> _sheetStates = new Dictionary<string, SheetSharedState>();
 
         public TransverseRebarWindow(Autodesk.Revit.DB.Document doc)
         {
             InitializeComponent();
             LstRebars.ItemsSource = _rebarItems;
-            LstCtc.ItemsSource = _ctcItems;
+
+            // 구조도별 그룹핑
+            var view = CollectionViewSource.GetDefaultView(_rebarItems);
+            view.GroupDescriptions.Clear();
+            view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(RebarItem.SheetKey)));
+            view.SortDescriptions.Clear();
+            view.SortDescriptions.Add(new SortDescription(nameof(RebarItem.SheetKey), ListSortDirection.Ascending));
         }
 
         private void BtnBrowse_Click(object sender, RoutedEventArgs e)
@@ -52,24 +61,7 @@ namespace RevitRebarModeler.UI
                     return;
                 }
 
-                // 철근 목록
-                _rebarItems.Clear();
-                foreach (var rebar in LoadedData.TransverseRebars)
-                {
-                    _rebarItems.Add(new RebarItem
-                    {
-                        IsChecked = true,
-                        Id = rebar.Id.ToString(),
-                        SheetKey = ExtractStructureKey(rebar.SheetId),
-                        CycleNumber = rebar.CycleNumber,
-                        MatchedText = rebar.MatchedText ?? "",
-                        DiameterMm = rebar.DiameterMm,
-                        SegmentCount = rebar.Segments?.Count ?? 0,
-                        RebarData = rebar
-                    });
-                }
-
-                // JSON의 StructureRegions에서 sheet별 CTC 기본값 준비 (Civil3D ④에서 지정된 값)
+                // 구조도별 CTC 기본값 준비
                 var ctcLookup = new Dictionary<string, double>();
                 if (LoadedData.StructureRegions != null)
                 {
@@ -84,22 +76,42 @@ namespace RevitRebarModeler.UI
                     }
                 }
 
-                // 구조도별 CTC 테이블 생성
-                _ctcItems.Clear();
-                var sheetGroups = LoadedData.TransverseRebars
+                // 구조도별 공유 상태(SheetSharedState) 생성
+                _sheetStates.Clear();
+                var groupedBySheet = LoadedData.TransverseRebars
                     .GroupBy(r => ExtractStructureKey(r.SheetId))
-                    .OrderBy(g => g.Key);
-
-                foreach (var group in sheetGroups)
+                    .Where(g => !string.IsNullOrEmpty(g.Key));
+                foreach (var g in groupedBySheet)
                 {
-                    if (string.IsNullOrEmpty(group.Key)) continue;
-                    double defaultCtc = ctcLookup.TryGetValue(group.Key, out double c) ? c : 200;
-                    _ctcItems.Add(new SheetCtcItem
+                    double defaultCtc = ctcLookup.TryGetValue(g.Key, out double c) ? c : 200;
+                    _sheetStates[g.Key] = new SheetSharedState
                     {
-                        SheetKey = group.Key,
+                        SheetKey = g.Key,
                         CtcMm = defaultCtc,
-                        Cycle1Count = group.Count(r => r.CycleNumber == 1),
-                        Cycle2Count = group.Count(r => r.CycleNumber == 2)
+                        Cycle1Count = g.Count(r => r.CycleNumber == 1),
+                        Cycle2Count = g.Count(r => r.CycleNumber == 2),
+                        TotalCount = g.Count(),
+                        SelectedCount = g.Count() // 초기 전체 선택
+                    };
+                }
+
+                // 철근 아이템 구성 (공유 상태 참조)
+                _rebarItems.Clear();
+                foreach (var rebar in LoadedData.TransverseRebars)
+                {
+                    string sheetKey = ExtractStructureKey(rebar.SheetId);
+                    _sheetStates.TryGetValue(sheetKey, out var state);
+                    _rebarItems.Add(new RebarItem
+                    {
+                        IsChecked = true,
+                        Id = rebar.Id.ToString(),
+                        SheetKey = sheetKey,
+                        CycleNumber = rebar.CycleNumber,
+                        MatchedText = rebar.MatchedText ?? "",
+                        DiameterMm = rebar.DiameterMm,
+                        SegmentCount = rebar.Segments?.Count ?? 0,
+                        RebarData = rebar,
+                        SharedState = state
                     });
                 }
 
@@ -107,7 +119,7 @@ namespace RevitRebarModeler.UI
                 BtnPlace.IsEnabled = true;
 
                 int total = _rebarItems.Count;
-                int sheets = _ctcItems.Count;
+                int sheets = _sheetStates.Count;
                 TxtInfo.Text = $"프로젝트: {LoadedData.ProjectName}\n" +
                                $"횡방향 철근: {total}개 | 구조도: {sheets}개 → Host 자동 매칭";
             }
@@ -133,12 +145,11 @@ namespace RevitRebarModeler.UI
                 return;
             }
 
-            // 구조도별 CTC 수집
             SheetCtcMap = new Dictionary<string, double>();
-            foreach (var item in _ctcItems)
+            foreach (var kv in _sheetStates)
             {
-                if (item.CtcMm <= 0) item.CtcMm = 200;
-                SheetCtcMap[item.SheetKey] = item.CtcMm;
+                double ctc = kv.Value.CtcMm <= 0 ? 200 : kv.Value.CtcMm;
+                SheetCtcMap[kv.Key] = ctc;
             }
 
             SelectedRebars = checkedItems.Select(r => r.RebarData).ToList();
@@ -150,6 +161,7 @@ namespace RevitRebarModeler.UI
         {
             foreach (var item in _rebarItems) item.IsChecked = true;
             ChkAll.IsChecked = true;
+            RecomputeAllSheetSelectedCounts();
             UpdateSelectionInfo();
         }
 
@@ -157,6 +169,7 @@ namespace RevitRebarModeler.UI
         {
             foreach (var item in _rebarItems) item.IsChecked = false;
             ChkAll.IsChecked = false;
+            RecomputeAllSheetSelectedCounts();
             UpdateSelectionInfo();
         }
 
@@ -164,6 +177,7 @@ namespace RevitRebarModeler.UI
         {
             bool isChecked = ChkAll.IsChecked == true;
             foreach (var item in _rebarItems) item.IsChecked = isChecked;
+            RecomputeAllSheetSelectedCounts();
             UpdateSelectionInfo();
         }
 
@@ -173,14 +187,74 @@ namespace RevitRebarModeler.UI
             if (checkedCount == _rebarItems.Count) ChkAll.IsChecked = true;
             else if (checkedCount == 0) ChkAll.IsChecked = false;
             else ChkAll.IsChecked = null;
+            RecomputeAllSheetSelectedCounts();
             UpdateSelectionInfo();
+        }
+
+        private void BtnSheetSelectAll_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(sender is Button btn) || !(btn.Tag is string sheetKey)) return;
+            foreach (var item in _rebarItems.Where(r => r.SheetKey == sheetKey))
+                item.IsChecked = true;
+            RecomputeAllSheetSelectedCounts();
+            UpdateSelectionInfo();
+        }
+
+        private void BtnSheetDeselectAll_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(sender is Button btn) || !(btn.Tag is string sheetKey)) return;
+            foreach (var item in _rebarItems.Where(r => r.SheetKey == sheetKey))
+                item.IsChecked = false;
+            RecomputeAllSheetSelectedCounts();
+            UpdateSelectionInfo();
+        }
+
+        private void RecomputeAllSheetSelectedCounts()
+        {
+            foreach (var kv in _sheetStates)
+            {
+                int sel = _rebarItems.Count(r => r.SheetKey == kv.Key && r.IsChecked);
+                kv.Value.SelectedCount = sel;
+            }
         }
 
         private void UpdateSelectionInfo()
         {
             int checkedCount = _rebarItems.Count(r => r.IsChecked);
-            TxtSelectionInfo.Text = $"선택: {checkedCount}/{_rebarItems.Count}개";
+            TxtSelectionInfo.Text = $"전체 선택: {checkedCount}/{_rebarItems.Count}개";
         }
+    }
+
+    /// <summary>
+    /// 구조도별로 공유되는 상태.
+    /// 같은 SheetKey의 모든 RebarItem 이 같은 인스턴스를 참조하므로
+    /// CTC/선택수 등이 하나만 바뀌면 그룹 헤더에 즉시 반영됨.
+    /// </summary>
+    public class SheetSharedState : INotifyPropertyChanged
+    {
+        public string SheetKey { get; set; }
+
+        private double _ctcMm = 200;
+        public double CtcMm
+        {
+            get => _ctcMm;
+            set { if (Math.Abs(_ctcMm - value) > 0.01) { _ctcMm = value; Notify(nameof(CtcMm)); } }
+        }
+
+        public int Cycle1Count { get; set; }
+        public int Cycle2Count { get; set; }
+        public int TotalCount { get; set; }
+
+        private int _selectedCount;
+        public int SelectedCount
+        {
+            get => _selectedCount;
+            set { if (_selectedCount != value) { _selectedCount = value; Notify(nameof(SelectedCount)); } }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+        private void Notify(string name) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 
     public class RebarItem : INotifyPropertyChanged
@@ -200,26 +274,17 @@ namespace RevitRebarModeler.UI
         public int SegmentCount { get; set; }
         public TransverseRebarData RebarData { get; set; }
 
-        public event PropertyChangedEventHandler PropertyChanged;
-        private void Notify(string name) =>
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-    }
+        public SheetSharedState SharedState { get; set; }
 
-    public class SheetCtcItem : INotifyPropertyChanged
-    {
-        private double _ctcMm = 200;
-
-        public string SheetKey { get; set; }
-
-        public double CtcMm
+        // 그룹 헤더 바인딩용 passthrough
+        public double SheetCtcMm
         {
-            get => _ctcMm;
-            set { if (Math.Abs(_ctcMm - value) > 0.01) { _ctcMm = value; Notify(nameof(CtcMm)); } }
+            get => SharedState?.CtcMm ?? 200;
+            set { if (SharedState != null) SharedState.CtcMm = value; }
         }
-
-        public int Cycle1Count { get; set; }
-        public int Cycle2Count { get; set; }
-        public int TotalCount => Cycle1Count + Cycle2Count;
+        public int Cycle1Count => SharedState?.Cycle1Count ?? 0;
+        public int Cycle2Count => SharedState?.Cycle2Count ?? 0;
+        public int SheetSelectedCount => SharedState?.SelectedCount ?? 0;
 
         public event PropertyChangedEventHandler PropertyChanged;
         private void Notify(string name) =>
