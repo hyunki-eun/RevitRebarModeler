@@ -38,13 +38,23 @@ namespace RevitRebarModeler
                 };
                 panel.AddItem(btnTransverseRebar);
 
+                var btnLongitudinalRebar = new PushButtonData(
+                    "cmdLongitudinalRebar",
+                    "종방향 철근\n배치",
+                    dllPath,
+                    "RevitRebarModeler.Commands.CreateLongitudinalRebarCommand")
+                {
+                    ToolTip = "Cycle1 횡철근 polyline을 기준으로 CTC 간격으로 종방향 철근을 생성합니다."
+                };
+                panel.AddItem(btnLongitudinalRebar);
+
                 var btnPreviewCurves = new PushButtonData(
                     "cmdPreviewRebarCurves",
-                    "커브\n미리보기",
+                    "철근\n미리보기",
                     dllPath,
                     "RevitRebarModeler.Commands.PreviewRebarCurvesCommand")
                 {
-                    ToolTip = "Rebar 생성 없이 Line/Arc 커브만 DirectShape로 표시하여 좌표 공간을 검증합니다."
+                    ToolTip = "Rebar 생성 없이 철근의 Line/Arc 커브 라인을 DirectShape로 표시하여 터널 외곽 좌표를 검증합니다."
                 };
                 panel.AddItem(btnPreviewCurves);
 

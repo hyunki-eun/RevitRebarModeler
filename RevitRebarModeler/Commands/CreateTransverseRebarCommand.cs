@@ -18,14 +18,7 @@ namespace RevitRebarModeler.Commands
     {
         private const double MmToFt = 1.0 / 304.8;
 
-        private static readonly string[] RebarFamilyPaths = new[]
-        {
-            @"C:\ProgramData\Autodesk\RVT 2024\Libraries\Korean\구조 프리캐스트\Revit\00.rfa",
-            @"C:\ProgramData\Autodesk\RVT 2025\Libraries\Korean\구조 프리캐스트\Revit\00.rfa",
-            @"C:\ProgramData\Autodesk\RVT 2023\Libraries\Korean\구조 프리캐스트\Revit\00.rfa",
-        };
-
-        private bool _verboseDebug = true;
+        private bool _verboseDebug = false;   // 개발 시 true, 사용자 배포 시 false
         private bool _debugLogged = false;
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
@@ -65,6 +58,7 @@ namespace RevitRebarModeler.Commands
             var diameterStats = new Dictionary<int, int>();
             var failureStats = new Dictionary<int, int>();        // 직경별 실패 카운트
             var failureReasons = new Dictionary<int, string>();   // 직경별 첫 실패 사유
+            var failureDetails = new List<string>();              // rebar-id별 상세 실패 기록
 
             var rebarsBySheet = supportedRebars
                 .GroupBy(r => ExtractStructureKey(r.SheetId))
@@ -74,16 +68,15 @@ namespace RevitRebarModeler.Commands
             {
                 tr.Start();
 
-                EnsureRebarFamilyLoaded(doc, errors);
-
                 if (new FilteredElementCollector(doc).OfClass(typeof(RebarBarType)).FirstOrDefault() == null)
                 {
                     tr.RollBack();
-                    TaskDialog.Show("오류", "Rebar 패밀리 로드 실패.");
+                    TaskDialog.Show("오류", "RebarBarType이 없습니다.\n구조 템플릿에서 실행해주세요.");
                     return Result.Failed;
                 }
 
-                RebarHookType hookType = FindHookType(doc);
+                // 시작/끝 후크 없음 (null 전달)
+                RebarHookType hookType = null;
 
                 foreach (var sheetGroup in rebarsBySheet)
                 {
@@ -93,6 +86,8 @@ namespace RevitRebarModeler.Commands
                     {
                         hostMissing += sheetGroup.Count();
                         errors.Add($"[{structureKey}] Host 매칭 실패 → {sheetGroup.Count()}개 스킵");
+                        foreach (var r in sheetGroup)
+                            failureDetails.Add($"[{structureKey}] Id={r.Id} cycle={r.CycleNumber} D{(int)Math.Round(r.DiameterMm)} → Host 매칭 실패");
                         continue;
                     }
 
@@ -112,7 +107,20 @@ namespace RevitRebarModeler.Commands
                         sheetTransforms.TryGetValue(structureKey, out var t)
                             ? t : Civil3DCoordinate.CenterlineTransform.Identity;
 
-                    int copies = (int)Math.Floor(depthMm / ctcMm) + 1;
+                    // CTC 의미: 같은 cycle끼리의 간격 (c1→c1, c2→c2 = CTC)
+                    //           인접 cycle 간격 (c1→c2) = CTC/2
+                    // 따라서 복사 stride = CTC/2
+                    double strideMm = ctcMm / 2.0;
+
+                    // stride 배수 위치 + 끝단 보정 (남는 공간 > stride/2이면 depth 끝단에 한 단 추가)
+                    var yOffsets = new List<double>();
+                    int nFull = (int)Math.Floor(depthMm / strideMm);
+                    for (int i = 0; i <= nFull; i++)
+                        yOffsets.Add(i * strideMm);
+                    double remainderMm = depthMm - nFull * strideMm;
+                    if (remainderMm > strideMm / 2.0)
+                        yOffsets.Add(depthMm);
+                    int copies = yOffsets.Count;
 
                     debugLog.Add($"[{structureKey}] Cycle2Tx: {(cycle2Tx.IsIdentity ? "Identity(중심선 없음)" : $"rigid θ=atan2({cycle2Tx.Sin:F4},{cycle2Tx.Cos:F4})")}");
 
@@ -120,14 +128,12 @@ namespace RevitRebarModeler.Commands
                     {
                         debugLog.Add($"[DEBUG] === {structureKey} ===");
                         debugLog.Add($"[DEBUG] GlobalOrigin: ({Civil3DCoordinate.GlobalOriginXMm:F1},{Civil3DCoordinate.GlobalOriginYMm:F1}) mm");
-                        debugLog.Add($"[DEBUG] depth={depthMm}mm, CTC={ctcMm}mm, copies={copies}");
+                        debugLog.Add($"[DEBUG] depth={depthMm}mm, CTC={ctcMm}mm, stride={strideMm}mm, remainder={remainderMm:F1}mm, copies={copies}");
                     }
 
                     for (int copy = 0; copy < copies; copy++)
                     {
-                        double yOffsetMm = copy * ctcMm;
-                        if (yOffsetMm > depthMm) break;
-
+                        double yOffsetMm = yOffsets[copy];
                         double yOffsetFt = yOffsetMm * MmToFt;
 
                         bool isCycle1Turn = (copy % 2 == 0);
@@ -151,6 +157,7 @@ namespace RevitRebarModeler.Commands
                                     failureStats[dKey0] = failureStats.ContainsKey(dKey0) ? failureStats[dKey0] + 1 : 1;
                                     if (!failureReasons.ContainsKey(dKey0))
                                         failureReasons[dKey0] = "RebarBarType 매칭 실패";
+                                    failureDetails.Add($"[{structureKey}] Id={rebar.Id} copy={copy} cycle={rebar.CycleNumber} D{dKey0} → RebarBarType 매칭 실패");
                                     continue;
                                 }
 
@@ -161,6 +168,7 @@ namespace RevitRebarModeler.Commands
                                     failureStats[dKey0] = failureStats.ContainsKey(dKey0) ? failureStats[dKey0] + 1 : 1;
                                     if (!failureReasons.ContainsKey(dKey0))
                                         failureReasons[dKey0] = "Curve 생성 실패";
+                                    failureDetails.Add($"[{structureKey}] Id={rebar.Id} copy={copy} cycle={rebar.CycleNumber} D{dKey0} → Curve 생성 실패 (segments={rebar.Segments?.Count ?? 0})");
                                     continue;
                                 }
 
@@ -189,7 +197,7 @@ namespace RevitRebarModeler.Commands
                                 {
                                     rebarElem = Rebar.CreateFromCurves(
                                         doc, RebarStyle.Standard, barType,
-                                        hookType, hookType,
+                                        null, null,
                                         hostElement, XYZ.BasisY,
                                         curves,
                                         RebarHookOrientation.Left,
@@ -225,6 +233,10 @@ namespace RevitRebarModeler.Commands
 
                                 if (rebarElem != null)
                                 {
+                                    // 시작/끝 후크 강제 제거 (RebarBarType/Shape 기본 후크 override)
+                                    try { rebarElem.SetHookTypeId(0, ElementId.InvalidElementId); } catch { }
+                                    try { rebarElem.SetHookTypeId(1, ElementId.InvalidElementId); } catch { }
+
                                     string cycleLabel = isCycle1Turn ? "1cycle" : "2cycle";
                                     rebarElem.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)
                                         ?.Set($"{structureKey}_{cycleLabel}");
@@ -248,13 +260,12 @@ namespace RevitRebarModeler.Commands
                                 {
                                     failed++;
                                     failureStats[dKey0] = failureStats.ContainsKey(dKey0) ? failureStats[dKey0] + 1 : 1;
+                                    string reason = $"BarType={barType?.Name ?? "null"} | " +
+                                                    $"Std: {standardError ?? "OK"} | " +
+                                                    $"FF: {freeformError ?? "OK"}";
                                     if (!failureReasons.ContainsKey(dKey0))
-                                    {
-                                        string reason = $"BarType={barType?.Name ?? "null"} | " +
-                                                        $"Std: {standardError ?? "OK"} | " +
-                                                        $"FF: {freeformError ?? "OK"}";
                                         failureReasons[dKey0] = reason;
-                                    }
+                                    failureDetails.Add($"[{structureKey}] Id={rebar.Id} copy={copy} cycle={rebar.CycleNumber} D{dKey0} → {reason}");
                                 }
                             }
                             catch (Exception ex)
@@ -263,6 +274,7 @@ namespace RevitRebarModeler.Commands
                                 failureStats[dKey0] = failureStats.ContainsKey(dKey0) ? failureStats[dKey0] + 1 : 1;
                                 if (!failureReasons.ContainsKey(dKey0))
                                     failureReasons[dKey0] = $"Outer: {ex.GetType().Name}: {ex.Message}";
+                                failureDetails.Add($"[{structureKey}] Id={rebar.Id} copy={copy} cycle={rebar.CycleNumber} D{dKey0} → Outer: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
                             }
                         }
                     }
@@ -298,14 +310,85 @@ namespace RevitRebarModeler.Commands
             foreach (var kv in sheetCtcMap)
                 msg += $"│  ── {kv.Key}: CTC={kv.Value}mm\n";
 
-            if (debugLog.Count > 0)
+            if (_verboseDebug && debugLog.Count > 0)
                 msg += "\n═══ 디버그 ═══\n" + string.Join("\n", debugLog);
 
             if (errors.Count > 0)
                 msg += "\n\n오류:\n" + string.Join("\n", errors.Take(20));
 
+            string logPath = WriteFailureLog(created, createdStandard, createdFreeForm, failed, hostMissing,
+                diameterStats, failureStats, failureReasons, failureDetails, errors, debugLog, sheetCtcMap);
+            if (!string.IsNullOrEmpty(logPath))
+                msg += $"\n\n로그: {logPath}";
+
             TaskDialog.Show("횡방향 철근 배치", msg);
             return Result.Succeeded;
+        }
+
+        private string WriteFailureLog(int created, int createdStandard, int createdFreeForm, int failed, int hostMissing,
+            Dictionary<int, int> diameterStats, Dictionary<int, int> failureStats, Dictionary<int, string> failureReasons,
+            List<string> failureDetails, List<string> errors, List<string> debugLog, Dictionary<string, double> sheetCtcMap)
+        {
+            try
+            {
+                string logDir = Path.Combine(Path.GetTempPath(), "RevitRebarModeler", "Logs");
+                Directory.CreateDirectory(logDir);
+                string logPath = Path.Combine(logDir, $"TransverseRebar_{DateTime.Now:yyyyMMdd_HHmmss}.log");
+
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine("═══════════════════════════════════");
+                sb.AppendLine($"  횡방향 철근 배치 로그 — {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                sb.AppendLine("═══════════════════════════════════");
+                sb.AppendLine($"총 배치: {created} | 실패: {failed} | Host missing: {hostMissing}");
+                sb.AppendLine($"  Standard: {createdStandard} | FreeForm: {createdFreeForm}");
+                sb.AppendLine();
+
+                sb.AppendLine("── 직경별 성공 ──");
+                foreach (var kv in diameterStats.OrderBy(k => k.Key))
+                    sb.AppendLine($"  H{kv.Key}: {kv.Value}개");
+
+                sb.AppendLine();
+                sb.AppendLine("── 직경별 실패 요약 ──");
+                foreach (var kv in failureStats.OrderBy(k => k.Key))
+                {
+                    string reason = failureReasons.ContainsKey(kv.Key) ? failureReasons[kv.Key] : "unknown";
+                    sb.AppendLine($"  H{kv.Key}: {kv.Value}개 — {reason}");
+                }
+
+                sb.AppendLine();
+                sb.AppendLine("── 구조도별 CTC 설정 ──");
+                foreach (var kv in sheetCtcMap)
+                    sb.AppendLine($"  {kv.Key}: CTC={kv.Value}mm");
+
+                if (failureDetails.Count > 0)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine($"═══ 실패 상세 ({failureDetails.Count}건) ═══");
+                    foreach (var line in failureDetails)
+                        sb.AppendLine(line);
+                }
+
+                if (errors.Count > 0)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine($"═══ 그룹 오류 ({errors.Count}건) ═══");
+                    foreach (var e in errors) sb.AppendLine(e);
+                }
+
+                if (debugLog.Count > 0)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("═══ 디버그 ═══");
+                    foreach (var line in debugLog) sb.AppendLine(line);
+                }
+
+                File.WriteAllText(logPath, sb.ToString(), System.Text.Encoding.UTF8);
+                return logPath;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private double ParseDepthFromHost(Element hostElement)
@@ -314,24 +397,6 @@ namespace RevitRebarModeler.Commands
                 ?.AsString() ?? "";
             var match = Regex.Match(comments, @"depth=(\d+\.?\d*)");
             return match.Success ? double.Parse(match.Groups[1].Value) : 0;
-        }
-
-        private string EnsureRebarFamilyLoaded(Document doc, List<string> errors)
-        {
-            var existing = new FilteredElementCollector(doc).OfClass(typeof(RebarBarType)).FirstOrDefault();
-            if (existing != null) return null;
-
-            foreach (var path in RebarFamilyPaths)
-            {
-                if (!File.Exists(path)) continue;
-                try
-                {
-                    Family family;
-                    if (doc.LoadFamily(path, new RebarFamilyLoadOptions(), out family)) return path;
-                }
-                catch { }
-            }
-            return null;
         }
 
         private Dictionary<string, Element> BuildHostMap(Document doc)
@@ -444,20 +509,4 @@ namespace RevitRebarModeler.Commands
         }
     }
 
-    internal class RebarFamilyLoadOptions : IFamilyLoadOptions
-    {
-        public bool OnFamilyFound(bool familyInUse, out bool overwriteParameterValues)
-        {
-            overwriteParameterValues = true;
-            return true;
-        }
-
-        public bool OnSharedFamilyFound(Family sharedFamily, bool familyInUse,
-            out FamilySource source, out bool overwriteParameterValues)
-        {
-            source = FamilySource.Family;
-            overwriteParameterValues = true;
-            return true;
-        }
-    }
 }
