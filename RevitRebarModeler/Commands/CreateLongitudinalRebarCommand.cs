@@ -137,57 +137,74 @@ namespace RevitRebarModeler.Commands
                     double halfDiam = setting.DiameterMm / 2.0;
                     double pos2ShiftMm = GetPos2Shift(setting.Pos2Shift, setting.OffsetMm);
 
-                    // Pos1별 기준 polyline 리스트 + 기준선 offset 부호 결정
-                    List<TransverseRebarData> basePolys;
-                    // baseSignFromBC: 기준 곡선에서 "BC 반대 방향(= outer 방향, 지반 쪽)"이 +인지 결정
-                    //  - Inner 기준선 → inner 곡선에서 양수 shift면 BC 반대(벽체 중심) 쪽으로
-                    //  - Outer 기준선 → outer 곡선에서 양수 shift면 BC 반대(지반) 쪽으로
-                    //  - Center 기준선 → outer 곡선에서 -offset/2 shift 후 추가로 pos2ShiftMm 적용
-                    double baseOffsetMm; // 기준선에서 최종 arc(b)까지의 부호 있는 거리 (+ = BC 반대)
+                    // Pos1별 기준 곡선 결정 (CTC 측정 기준선)
+                    //  - Inner → 내측 횡철근 선
+                    //  - Outer → 외측 횡철근 선
+                    //  - Center → 내측과 외측의 중점을 이은 중심 곡선 (BuildCenterCurve)
+                    List<RebarSegment> concatenatedBase;
+                    double baseArcLen;
                     switch (setting.Pos1)
                     {
                         case UI.Pos1Kind.Inner:
-                            basePolys = innerPolys;
-                            baseOffsetMm = pos2ShiftMm; // inner + pos2shift
+                        {
+                            var innerSegListsForBase = innerPolys.Select(p => p.Segments)
+                                .Where(s => s != null && s.Count > 0).ToList();
+                            var chain = LongiCurveSampler.ConcatenatePolylinesTrimmed(innerSegListsForBase);
+                            if (chain.Count == 0)
+                            {
+                                errors.Add($"[{structureKey}] 내측 기준 polyline 연결 실패");
+                                continue;
+                            }
+                            concatenatedBase = LongiCurveSampler.MaterializeTrimmed(chain);
+                            baseArcLen = LongiCurveSampler.TotalLengthTrimmed(chain);
                             break;
+                        }
                         case UI.Pos1Kind.Center:
-                            // 중심 = outer에서 -offset/2 → 다시 pos2ShiftMm 적용
-                            basePolys = outerPolys;
-                            baseOffsetMm = -(setting.OffsetMm / 2.0) + pos2ShiftMm;
+                        {
+                            // 내측 곡선 위의 각 점 ↔ 외측 최근점의 중점을 이은 곡선
+                            var innerSegListsForBase = innerPolys.Select(p => p.Segments)
+                                .Where(s => s != null && s.Count > 0).ToList();
+                            var innerChain = LongiCurveSampler.ConcatenatePolylinesTrimmed(innerSegListsForBase);
+                            var outerSegListsForBase = outerPolys.Select(p => p.Segments)
+                                .Where(s => s != null && s.Count > 0).ToList();
+                            var outerChain = LongiCurveSampler.ConcatenatePolylinesTrimmed(outerSegListsForBase);
+                            if (innerChain.Count == 0 || outerChain.Count == 0)
+                            {
+                                errors.Add($"[{structureKey}] 중심 곡선 생성을 위한 내/외측 체인 부족");
+                                continue;
+                            }
+                            var innerMat = LongiCurveSampler.MaterializeTrimmed(innerChain);
+                            var outerMat = LongiCurveSampler.MaterializeTrimmed(outerChain);
+                            concatenatedBase = LongiCurveSampler.BuildCenterCurve(innerMat, outerMat);
+                            if (concatenatedBase == null || concatenatedBase.Count == 0)
+                            {
+                                errors.Add($"[{structureKey}] 중심 곡선 생성 실패");
+                                continue;
+                            }
+                            baseArcLen = LongiCurveSampler.TotalLength(concatenatedBase);
                             break;
+                        }
                         case UI.Pos1Kind.Outer:
                         default:
-                            basePolys = outerPolys;
-                            baseOffsetMm = pos2ShiftMm; // outer + pos2shift
+                        {
+                            var outerSegListsForBase = outerPolys.Select(p => p.Segments)
+                                .Where(s => s != null && s.Count > 0).ToList();
+                            var chain = LongiCurveSampler.ConcatenatePolylinesTrimmed(outerSegListsForBase);
+                            if (chain.Count == 0)
+                            {
+                                errors.Add($"[{structureKey}] 외측 기준 polyline 연결 실패");
+                                continue;
+                            }
+                            concatenatedBase = LongiCurveSampler.MaterializeTrimmed(chain);
+                            baseArcLen = LongiCurveSampler.TotalLengthTrimmed(chain);
                             break;
+                        }
                     }
 
-                    // --- 기준 polyline들을 TrimmedChain으로 연결 ---
-                    var baseSegLists = basePolys.Select(p => p.Segments).Where(s => s != null && s.Count > 0).ToList();
+                    debugLog.Add($"[{structureKey}] 기준 곡선(Pos1={setting.Pos1}) arcLen={baseArcLen:F0}mm, segs={concatenatedBase.Count}");
 
-                    var chainDebug = new List<string>();
-                    LongiCurveSampler.TrimmedChainDebugLog = chainDebug;
-                    debugLog.Add($"[{structureKey}] TrimmedChain 구성:");
-                    var trimmedChain = LongiCurveSampler.ConcatenatePolylinesTrimmed(baseSegLists);
-                    LongiCurveSampler.TrimmedChainDebugLog = null;
-                    debugLog.AddRange(chainDebug);
-
-                    for (int ti = 0; ti < trimmedChain.Count; ti++)
-                    {
-                        var ts = trimmedChain[ti];
-                        double segL = LongiCurveSampler.SegmentLength(ts.Seg);
-                        debugLog.Add($"    trim#{ti} {ts.Seg.SegmentType} segL={segL:F1} " +
-                                     $"LocalStart={ts.LocalStartMm:F1} LocalEnd={ts.LocalEndMm:F1} eff={ts.EffectiveLength:F1}");
-                    }
-
-                    if (trimmedChain.Count == 0)
-                    {
-                        errors.Add($"[{structureKey}] 기준 polyline 연결 실패");
-                        continue;
-                    }
-
-                    var concatenatedBase = LongiCurveSampler.MaterializeTrimmed(trimmedChain);
-                    double baseArcLen = LongiCurveSampler.TotalLengthTrimmed(trimmedChain);
+                    // Pos2 shift는 추후 기준 arc에 추가 offset 적용 시 사용 (현재는 0만 의미있게 처리)
+                    double baseOffsetMm = pos2ShiftMm;
 
                     // Step 1: 기준 arc(a)를 baseOffsetMm 만큼 옵셋 → arc(b)
                     // offsetAwayFromBC = (baseOffsetMm >= 0) — 부호에 따라 방향 지정, 거리는 절대값
@@ -201,11 +218,12 @@ namespace RevitRebarModeler.Commands
 
                     double offsetArcLen = LongiCurveSampler.TotalLength(offsetSegs);
 
-                    // Step 2-3: 옵셋 arc(b) 중앙에서 지정된 개수만큼 양방향 CTC 등분 → 포인트(c) + 법선(d)
+                    // Step 2-3: 기준 횡철근 곡선(concatenatedBase) 위에서 CTC 등분 → 포인트(c) + 법선(d)
+                    // CTC는 항상 횡철근 선 기준으로 측정되어야 함 (offset된 선 아님).
                     var samples = LongiCurveSampler.SampleFromCenterWithChordNormal(
-                        offsetSegs, setting.CtcMm, setting.Count);
+                        concatenatedBase, setting.CtcMm, setting.Count);
 
-                    debugLog.Add($"  기준 polyline {basePolys.Count}개 (Pos1={setting.Pos1}) → trimmed arcLen={baseArcLen:N0}, " +
+                    debugLog.Add($"  기준 Pos1={setting.Pos1} → arcLen={baseArcLen:N0}, " +
                                  $"baseOffset={baseOffsetMm:+#;-#;0}mm (Pos2={setting.Pos2Shift}), " +
                                  $"offsetArcLen={offsetArcLen:N0}, offset={setting.OffsetMm:F1}, 샘플={samples.Count}");
 
@@ -241,33 +259,29 @@ namespace RevitRebarModeler.Commands
                             continue;
                         }
 
-                        // 외측 원: 외측 횡방향 철근 선에서 offset/2 만큼 안쪽(내측 방향)으로 이동
+                        // 내측 방향 단위벡터 = fOuter → fInner.
+                        // 외측/내측 모두 "반대쪽 교차점을 향해" offset/2 이동 → 벽체 두께 내부로 들어감.
+                        // 샘플점 위치에 의존하지 않으므로 반대 방향으로 튀어나가는 현상이 없음.
                         {
-                            double dx = ptOnOffset.X - fOuter.X;
-                            double dy = ptOnOffset.Y - fOuter.Y;
+                            double dx = fInner.X - fOuter.X;
+                            double dy = fInner.Y - fOuter.Y;
                             double d = Math.Sqrt(dx * dx + dy * dy);
                             if (d > 1e-9)
                             {
                                 double mv = setting.OffsetMm / 2.0;
+                                double ux = dx / d, uy = dy / d;
+
+                                // 외측 원: fOuter 에서 내측 방향(+u) 으로 offset/2
                                 fOuter = new RebarPoint
                                 {
-                                    X = fOuter.X + dx / d * mv,
-                                    Y = fOuter.Y + dy / d * mv
+                                    X = fOuter.X + ux * mv,
+                                    Y = fOuter.Y + uy * mv
                                 };
-                            }
-                        }
-                        // 내측 원: 내측 횡방향 철근 선에서 offset/2 만큼 안쪽(외측 방향)으로 이동
-                        {
-                            double dx = ptOnOffset.X - fInner.X;
-                            double dy = ptOnOffset.Y - fInner.Y;
-                            double d = Math.Sqrt(dx * dx + dy * dy);
-                            if (d > 1e-9)
-                            {
-                                double mv = setting.OffsetMm / 2.0;
+                                // 내측 원: fInner 에서 외측 방향(-u) 으로 offset/2
                                 fInner = new RebarPoint
                                 {
-                                    X = fInner.X + dx / d * mv,
-                                    Y = fInner.Y + dy / d * mv
+                                    X = fInner.X - ux * mv,
+                                    Y = fInner.Y - uy * mv
                                 };
                             }
                         }
@@ -319,7 +333,7 @@ namespace RevitRebarModeler.Commands
 
                     sheetStats[structureKey] = sheetCreated;
                     debugLog.Add($"[{structureKey}] 전체: Pos1={setting.Pos1}, Pos2={setting.Pos2Shift}, CTC={setting.CtcMm}, " +
-                                 $"offset={setting.OffsetMm:F1}, D/2={halfDiam:F1}, 기준연결={basePolys.Count}개, created={sheetCreated}");
+                                 $"offset={setting.OffsetMm:F1}, D/2={halfDiam:F1}, 기준arcLen={baseArcLen:F0}mm, created={sheetCreated}");
 
                     // 목표 개수와 다르면 이유 분석 기록
                     if (sheetCreated != expectedCount)
