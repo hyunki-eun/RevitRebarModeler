@@ -325,6 +325,10 @@ namespace RevitRebarModeler.UI
                 if (result != MessageBoxResult.Yes) return;
             }
 
+            // 세션 캐시에 저장 — 전단철근 등 후속 명령에서 단(段) 위치 산출 시 동일 설정 사용
+            SessionCache.LoadedJson = LoadedData;
+            SessionCache.LongitudinalSettings = SheetSettings;
+
             DialogResult = true;
             Close();
         }

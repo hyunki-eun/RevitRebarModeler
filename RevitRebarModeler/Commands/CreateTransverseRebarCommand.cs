@@ -145,8 +145,32 @@ namespace RevitRebarModeler.Commands
                             ? Civil3DCoordinate.CenterlineTransform.Identity
                             : cycle2Tx;
 
-                        foreach (var rebar in currentRebars)
+                        // 단(段) 번호 = copy + 1 (1-based, 1Cycle/2Cycle 무관)
+                        int dan = copy + 1;
+                        // 내/외측 분류: JSON 저장 순서로 앞 절반 = 내측, 뒤 절반 = 외측
+                        int halfCount = currentRebars.Count / 2;
+
+                        // 같은 측(내측/외측) 내에서 X centroid 작은 순 → 좌→우 인덱스 부여
+                        var innerList = currentRebars.Take(halfCount).ToList();
+                        var outerList = currentRebars.Skip(halfCount).ToList();
+                        var innerOrdered = innerList
+                            .Select((r, i) => new { Rebar = r, OrigIdx = i, Cx = ComputeCentroidX(r) })
+                            .OrderBy(x => x.Cx).ToList();
+                        var outerOrdered = outerList
+                            .Select((r, i) => new { Rebar = r, OrigIdx = i + halfCount, Cx = ComputeCentroidX(r) })
+                            .OrderBy(x => x.Cx).ToList();
+                        // OrigIdx → sideIndex(좌→우 1-based) 매핑
+                        var sideIndexMap = new Dictionary<int, int>();
+                        for (int i = 0; i < innerOrdered.Count; i++) sideIndexMap[innerOrdered[i].OrigIdx] = i + 1;
+                        for (int i = 0; i < outerOrdered.Count; i++) sideIndexMap[outerOrdered[i].OrigIdx] = i + 1;
+
+                        for (int rebarIdx = 0; rebarIdx < currentRebars.Count; rebarIdx++)
                         {
+                            var rebar = currentRebars[rebarIdx];
+                            bool isOuterSide = (rebarIdx >= halfCount);
+                            string sideLabel = isOuterSide ? "outer" : "inner";
+                            int sideIndex = sideIndexMap.TryGetValue(rebarIdx, out int si) ? si : 0;
+                            {
                             int dKey0 = (int)Math.Round(rebar.DiameterMm);
                             try
                             {
@@ -238,10 +262,10 @@ namespace RevitRebarModeler.Commands
                                     try { rebarElem.SetHookTypeId(1, ElementId.InvalidElementId); } catch { }
 
                                     string cycleLabel = isCycle1Turn ? "1cycle" : "2cycle";
-                                    rebarElem.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)
-                                        ?.Set($"{structureKey}_{cycleLabel}");
+                                    string markText = $"{structureKey}_{dan}단_{sideLabel}_{sideIndex}";
+                                    rebarElem.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.Set(markText);
                                     rebarElem.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)
-                                        ?.Set($"{structureKey}|CycleNumber={rebar.CycleNumber}|{createMethod}");
+                                        ?.Set($"{structureKey}|{dan}단|{sideLabel}#{sideIndex}|CycleNumber={rebar.CycleNumber}|{cycleLabel}|{createMethod}");
 
                                     created++;
                                     if (createMethod.StartsWith("Standard")) createdStandard++;
@@ -276,12 +300,17 @@ namespace RevitRebarModeler.Commands
                                     failureReasons[dKey0] = $"Outer: {ex.GetType().Name}: {ex.Message}";
                                 failureDetails.Add($"[{structureKey}] Id={rebar.Id} copy={copy} cycle={rebar.CycleNumber} D{dKey0} → Outer: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
                             }
+                            } // inner side block
                         }
                     }
                 }
 
+                try { Models.RebarColorHelper.ApplyToAll3DViews(doc); } catch { }
                 tr.Commit();
             }
+
+            // 세션 캐시에 CTC 맵 저장 → 전단철근 배치 시 재사용 (파일 재오픈 후 Revit 역파싱으로도 복원 가능)
+            SessionCache.TransverseCtcMap = new System.Collections.Generic.Dictionary<string, double>(sheetCtcMap);
 
             string msg = "═══════════════════════════════════\n" +
                          "  횡방향 철근 배치 완료\n" +
@@ -389,6 +418,22 @@ namespace RevitRebarModeler.Commands
             {
                 return null;
             }
+        }
+
+        /// <summary>
+        /// 횡철근 폴리라인의 모든 Start/End 점 X 좌표 평균(centroid X) 반환.
+        /// 좌→우 정렬 시 인덱스 부여 기준으로 사용.
+        /// </summary>
+        private double ComputeCentroidX(TransverseRebarData rebar)
+        {
+            if (rebar?.Segments == null || rebar.Segments.Count == 0) return 0;
+            double sx = 0; int n = 0;
+            foreach (var seg in rebar.Segments)
+            {
+                if (seg.StartPoint != null) { sx += seg.StartPoint.X; n++; }
+                if (seg.EndPoint != null) { sx += seg.EndPoint.X; n++; }
+            }
+            return n > 0 ? sx / n : 0;
         }
 
         private double ParseDepthFromHost(Element hostElement)

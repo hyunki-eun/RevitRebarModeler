@@ -294,13 +294,16 @@ namespace RevitRebarModeler.Commands
                     }
 
                     // Step 7: 실제 생성 진행 (노이즈 필터 제거됨 — 모든 후보 그대로 배치)
-                    for (int i = 0; i < candidates.Count; i++)
+                    // 단(段) 번호 부여: 호길이 시작점부터의 거리(ArcLen) 작은 순으로 1단, 2단, ...
+                    var orderedCandidates = candidates.OrderBy(c => c.ArcLen).ToList();
+                    for (int i = 0; i < orderedCandidates.Count; i++)
                     {
-                        var cand = candidates[i];
+                        var cand = orderedCandidates[i];
+                        int dan = i + 1; // 1-based 단 번호
 
                         // 실제 외측 철근 배치
                         if (TryCreateRebar(doc, cand.OutPt, depthFt, barType, hostElement,
-                            $"{structureKey}_longi_outer", out string mOut, out string eOut))
+                            $"{structureKey}_longi_outer_{dan}단", out string mOut, out string eOut))
                         {
                             created++; sheetCreated++;
                             if (mOut.StartsWith("Standard")) createdStandard++;
@@ -316,7 +319,7 @@ namespace RevitRebarModeler.Commands
 
                         // 실제 내측 철근 배치
                         if (TryCreateRebar(doc, cand.InPt, depthFt, barType, hostElement,
-                            $"{structureKey}_longi_inner", out string mIn, out string eIn))
+                            $"{structureKey}_longi_inner_{dan}단", out string mIn, out string eIn))
                         {
                             created++; sheetCreated++;
                             if (mIn.StartsWith("Standard")) createdStandard++;
@@ -361,8 +364,12 @@ namespace RevitRebarModeler.Commands
                     }
                 }
 
+                try { Models.RebarColorHelper.ApplyToAll3DViews(doc); } catch { }
                 tr.Commit();
             }
+
+            // 세션 캐시에 종방향 설정 저장 → 전단철근 배치 시 재사용 (파일 재오픈 후 Revit 역파싱으로도 복원 가능)
+            SessionCache.LongitudinalSettings = new System.Collections.Generic.Dictionary<string, UI.LongitudinalSheetSetting>(sheetSettings);
 
             string msg = "═══════════════════════════════════\n" +
                          "  종방향 철근 배치 완료\n" +

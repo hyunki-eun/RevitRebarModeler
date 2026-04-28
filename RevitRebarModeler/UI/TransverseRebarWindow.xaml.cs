@@ -152,6 +152,10 @@ namespace RevitRebarModeler.UI
                 SheetCtcMap[kv.Key] = ctc;
             }
 
+            // 세션 캐시에 저장 — 전단철근 등 후속 명령에서 횡방향 N단 Z 위치 산출 시 사용
+            SessionCache.LoadedJson = LoadedData;
+            SessionCache.TransverseCtcMap = SheetCtcMap;
+
             SelectedRebars = checkedItems.Select(r => r.RebarData).ToList();
             DialogResult = true;
             Close();

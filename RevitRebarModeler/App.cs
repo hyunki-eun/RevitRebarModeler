@@ -3,8 +3,33 @@ using System.Reflection;
 
 using Autodesk.Revit.UI;
 
+using RevitRebarModeler.Models;
+
 namespace RevitRebarModeler
 {
+    /// <summary>
+    /// 세션 단위로 공유되는 데이터 캐시.
+    /// - JSON 데이터: 한 번 로드한 JSON 을 여러 명령에서 공유.
+    /// - 종방향 철근 설정: 전단철근 배치에서 단(段) 위치를 산출하기 위해 활용.
+    /// </summary>
+    public static class SessionCache
+    {
+        public static CivilExportData LoadedJson { get; set; }
+        public static string LoadedJsonPath { get; set; }
+
+        /// <summary>
+        /// 종방향 철근 배치 시 사용된 구조도별 설정.
+        /// 전단철근이 단(段) = 종철근 샘플 포인트 위치를 그대로 재사용하기 위해 저장.
+        /// </summary>
+        public static System.Collections.Generic.Dictionary<string, UI.LongitudinalSheetSetting> LongitudinalSettings { get; set; }
+
+        /// <summary>
+        /// 횡방향 철근 배치 시 사용된 구조도별 CTC (mm).
+        /// 전단철근이 횡방향 N단의 Z 위치 = (N-1) × CTC/2 로 산출하기 위해 저장.
+        /// </summary>
+        public static System.Collections.Generic.Dictionary<string, double> TransverseCtcMap { get; set; }
+    }
+
     public class App : IExternalApplication
     {
         public Result OnStartup(UIControlledApplication app)
@@ -47,6 +72,16 @@ namespace RevitRebarModeler
                     ToolTip = "Cycle1 횡철근 polyline을 기준으로 CTC 간격으로 종방향 철근을 생성합니다."
                 };
                 panel.AddItem(btnLongitudinalRebar);
+
+                var btnShearRebar = new PushButtonData(
+                    "cmdShearRebar",
+                    "전단철근\n배치",
+                    dllPath,
+                    "RevitRebarModeler.Commands.CreateShearRebarCommand")
+                {
+                    ToolTip = "횡철근/종철근 데이터를 기반으로 묶음 단위 U자형 전단철근을 배치합니다."
+                };
+                panel.AddItem(btnShearRebar);
 
                 var btnPreviewCurves = new PushButtonData(
                     "cmdPreviewRebarCurves",
