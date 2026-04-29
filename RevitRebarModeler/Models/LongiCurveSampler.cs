@@ -2041,5 +2041,78 @@ namespace RevitRebarModeler.Models
             }
             return result;
         }
+
+        /// <summary>
+        /// 주어진 점에 가장 가까운 centerline 위 점에서의 chord-perpendicular을 계산.
+        /// 외측-내측 페어 연결선이 centerline에 수직이 되도록 ray 방향을 보정하는 용도.
+        /// </summary>
+        public static bool ComputeChordPerpendicularNearPoint(
+            List<RebarSegment> centerSegs, RebarPoint nearPoint,
+            out double nx, out double ny)
+        {
+            nx = ny = 0;
+            if (centerSegs == null || centerSegs.Count == 0 || nearPoint == null) return false;
+
+            double totalLen = TotalLength(centerSegs);
+            if (totalLen <= 0) return false;
+
+            double bestD2 = double.MaxValue;
+            double bestArcLen = 0;
+            double cumLen = 0;
+
+            foreach (var seg in centerSegs)
+            {
+                double segLen = SegmentLength(seg);
+                if (segLen < 1e-9) { cumLen += segLen; continue; }
+
+                var nearest = NearestPointOnSegment(seg, nearPoint);
+                if (nearest == null) { cumLen += segLen; continue; }
+
+                double dx = nearest.X - nearPoint.X;
+                double dy = nearest.Y - nearPoint.Y;
+                double d2 = dx * dx + dy * dy;
+                if (d2 < bestD2)
+                {
+                    bestD2 = d2;
+                    double localLen;
+                    if (seg.SegmentType == "Arc" && seg.MidPoint != null)
+                    {
+                        localLen = ArcLenFromThreePoints(seg.StartPoint, seg.MidPoint, nearest);
+                    }
+                    else
+                    {
+                        double sx = seg.StartPoint.X, sy = seg.StartPoint.Y;
+                        double ex = seg.EndPoint.X - sx, ey = seg.EndPoint.Y - sy;
+                        double l2 = ex * ex + ey * ey;
+                        double t = l2 < 1e-9 ? 0 : ((nearest.X - sx) * ex + (nearest.Y - sy) * ey) / l2;
+                        if (t < 0) t = 0; else if (t > 1) t = 1;
+                        localLen = t * segLen;
+                    }
+                    bestArcLen = cumLen + localLen;
+                }
+                cumLen += segLen;
+            }
+
+            // 양옆 delta 위치를 샘플링해서 chord 방향 → perpendicular
+            double delta = Math.Min(50.0, totalLen * 0.05);
+            if (delta < 1.0) delta = 1.0;
+            double posA = bestArcLen - delta;
+            double posB = bestArcLen + delta;
+            if (posA < 0) { posB = Math.Min(totalLen, posB - posA); posA = 0; }
+            if (posB > totalLen) { posA = Math.Max(0, posA - (posB - totalLen)); posB = totalLen; }
+            if (Math.Abs(posB - posA) < 1e-9) return false;
+
+            if (!SamplePointAt(centerSegs, posA, out var pA)) return false;
+            if (!SamplePointAt(centerSegs, posB, out var pB)) return false;
+            if (pA == null || pB == null) return false;
+
+            double cx = pB.X - pA.X, cy = pB.Y - pA.Y;
+            double len = Math.Sqrt(cx * cx + cy * cy);
+            if (len < 1e-9) return false;
+
+            nx = -cy / len;
+            ny = cx / len;
+            return true;
+        }
     }
 }

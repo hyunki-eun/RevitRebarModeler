@@ -131,6 +131,25 @@ namespace RevitRebarModeler.Commands
                         continue;
                     }
 
+                    // ★ ray 방향(외측-내측 페어 연결선)을 centerline에 수직으로 강제하기 위한 기준 곡선
+                    //   inner/outer trimmed chain → materialize → BuildCenterCurve.
+                    //   이 곡선은 ray 방향 계산 전용 (sampling 위치는 기존 Pos1/Pos2 로직 그대로).
+                    List<RebarSegment> centerForPerp = null;
+                    try
+                    {
+                        var innerChainForPerp = LongiCurveSampler.ConcatenatePolylinesTrimmed(innerSegLists);
+                        var outerChainForPerp = LongiCurveSampler.ConcatenatePolylinesTrimmed(outerSegLists);
+                        if (innerChainForPerp.Count > 0 && outerChainForPerp.Count > 0)
+                        {
+                            var innerMatForPerp = LongiCurveSampler.MaterializeTrimmed(innerChainForPerp);
+                            var outerMatForPerp = LongiCurveSampler.MaterializeTrimmed(outerChainForPerp);
+                            centerForPerp = LongiCurveSampler.BuildCenterCurve(innerMatForPerp, outerMatForPerp);
+                        }
+                    }
+                    catch { centerForPerp = null; }
+                    if (centerForPerp == null || centerForPerp.Count == 0)
+                        debugLog.Add($"[{structureKey}] perpendicular용 centerline 빌드 실패 → chord normal fallback 사용");
+
                     int sheetCreated = 0;
 
                     // --- Pos1 기준 곡선 + Pos2 shift → arc(b) 생성 ---
@@ -269,6 +288,16 @@ namespace RevitRebarModeler.Commands
                     for (int si = 0; si < samples.Count; si++)
                     {
                         var (arcLen, ptOnOffset, nx, ny) = samples[si];
+
+                        // ★ ray 방향을 centerline-perpendicular로 교체 → 외측-내측 페어 연결선이 centerline에 수직
+                        if (centerForPerp != null && centerForPerp.Count > 0 &&
+                            LongiCurveSampler.ComputeChordPerpendicularNearPoint(
+                                centerForPerp, ptOnOffset, out double pnx, out double pny))
+                        {
+                            // 기존 nx,ny와 부호 일치시키기 (반대 방향 뒤집힘 방지)
+                            if (pnx * nx + pny * ny < 0) { pnx = -pnx; pny = -pny; }
+                            nx = pnx; ny = pny;
+                        }
 
                         // Step 4-5: 법선 + 역법선 가상 선(e) → 횡철근 내부/외부와 교차
                         RebarPoint fInner = null, fOuter = null;
