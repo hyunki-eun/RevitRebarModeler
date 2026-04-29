@@ -311,6 +311,9 @@
 
         <!-- 하단 버튼 -->
         <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="9개 기준곡선 미리보기" Style="{StaticResource SecBtn}" Width="170" Height="38"
+                    Click="BtnPreview9Curves_Click" Margin="0,0,8,0"
+                    ToolTip="선택된 구조도의 Pos1×Pos2 9개 조합 기준곡선을 ModelCurve로 표시 (외측=빨강, 중앙=보라, 내측=파랑)"/>
             <Button Content="상태 새로고침" Style="{StaticResource SecBtn}" Width="110" Height="38" Click="BtnRevalidate_Click" Margin="0,0,8,0"/>
             <Button Content="배치 실행" Style="{StaticResource PrimaryBtn}" Width="140" Height="44" Click="BtnPlace_Click" x:Name="BtnPlace" IsEnabled="False" Margin="0,0,8,0"/>
             <Button Content="취소" Style="{StaticResource SecBtn}" Width="80" Height="38" IsCancel="True"/>

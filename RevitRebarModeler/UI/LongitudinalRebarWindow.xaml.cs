@@ -7,6 +7,8 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Media;
 
+using Autodesk.Revit.DB;
+
 using Microsoft.Win32;
 
 using Newtonsoft.Json;
@@ -21,6 +23,7 @@ namespace RevitRebarModeler.UI
         public Dictionary<string, LongitudinalSheetSetting> SheetSettings { get; private set; }
 
         private ObservableCollection<LongiSheetItem> _items = new ObservableCollection<LongiSheetItem>();
+        private readonly Autodesk.Revit.DB.Document _doc;
 
         public ObservableCollection<string> Pos1Options { get; } = new ObservableCollection<string>
         {
@@ -39,6 +42,7 @@ namespace RevitRebarModeler.UI
 
         public LongitudinalRebarWindow(Autodesk.Revit.DB.Document doc)
         {
+            _doc = doc;
             InitializeComponent();
             DataContext = this;
             LstSheets.ItemsSource = _items;
@@ -260,7 +264,18 @@ namespace RevitRebarModeler.UI
             {
                 bool offsetAway = item.Pos1 == "외측";
                 var offsetSegs = LongiCurveSampler.OffsetPolyline(targetChain, item.OffsetMm, item.BCx, item.BCy, offsetAway);
-                var testSamples = LongiCurveSampler.SampleFromCenterWithChordNormal(offsetSegs, item.CtcMm, item.Count);
+
+                // 구조도 중심선이 base curve와 만나는 위치를 anchor로 사용
+                double anchorArcLen = LongiCurveSampler.TotalLength(offsetSegs) / 2.0;
+                if (TryGetStructureCenterline(LoadedData, item.SheetKey,
+                    out double clSx, out double clSy, out double clEx, out double clEy))
+                {
+                    if (LongiCurveSampler.FindCenterlineIntersection(
+                            offsetSegs, clSx, clSy, clEx, clEy, out RebarPoint clHit, out double clArc))
+                        anchorArcLen = clArc;
+                }
+                var testSamples = LongiCurveSampler.SampleFromAnchorWithChordNormal(
+                    offsetSegs, item.CtcMm, item.Count, anchorArcLen);
                 int realCount = testSamples.Count * 2;
 
                 if (realCount == item.Count)
@@ -369,6 +384,195 @@ namespace RevitRebarModeler.UI
             var m = Regex.Match(label, @"\d+");
             return m.Success ? double.Parse(m.Value) : 16;
         }
+
+        // ========================================================================
+        // 9개 기준곡선 미리보기 (Pos1 × Pos2 = 9 조합) — ModelCurve로 표시
+        // 색상: 외측=빨강, 중앙=보라, 내측=파랑 (Line Style 서브카테고리로 분리)
+        // ========================================================================
+        private void BtnPreview9Curves_Click(object sender, RoutedEventArgs e)
+        {
+            var item = LstSheets.SelectedItem as LongiSheetItem;
+            if (item == null && _items.Count > 0) item = _items[0];
+            if (item == null)
+            {
+                MessageBox.Show("표시할 구조도가 없습니다. JSON을 먼저 로드하세요.", "안내");
+                return;
+            }
+            if (item.InnerTrimmedChain == null || item.InnerTrimmedChain.Count == 0 ||
+                item.OuterTrimmedChain == null || item.OuterTrimmedChain.Count == 0)
+            {
+                MessageBox.Show($"[{item.SheetKey}] 내측/외측 곡선이 비어있어 미리보기를 만들 수 없습니다.", "안내");
+                return;
+            }
+
+            int totalCurves = 0;
+            string err = null;
+
+            using (var tr = new Autodesk.Revit.DB.Transaction(_doc, $"9개 기준곡선 미리보기 ({item.SheetKey})"))
+            {
+                tr.Start();
+                try
+                {
+                    // 중앙 곡선 생성 (내측/외측 중점)
+                    List<RebarSegment> centerChain = null;
+                    try { centerChain = LongiCurveSampler.BuildCenterCurve(item.InnerTrimmedChain, item.OuterTrimmedChain); }
+                    catch { centerChain = null; }
+
+                    // 활성 뷰 (DirectShape 색상 오버라이드용)
+                    var activeView = _doc.ActiveView;
+
+                    var pos1List = new (string name, List<RebarSegment> chain, string styleName, Autodesk.Revit.DB.Color color)[]
+                    {
+                        ("외측", item.OuterTrimmedChain, "기준곡선_외측", new Autodesk.Revit.DB.Color(239, 68, 68)),
+                        ("중앙", centerChain,            "기준곡선_중앙", new Autodesk.Revit.DB.Color(139, 92, 246)),
+                        ("내측", item.InnerTrimmedChain, "기준곡선_내측", new Autodesk.Revit.DB.Color(59, 130, 246))
+                    };
+
+                    double offsetMm = item.OffsetMm;
+                    var pos2List = new (string label, double shift)[]
+                    {
+                        ("-offset/2", -offsetMm / 2.0),
+                        ("0",          0.0),
+                        ("+offset/2", +offsetMm / 2.0)
+                    };
+
+                    foreach (var p1 in pos1List)
+                    {
+                        if (p1.chain == null || p1.chain.Count == 0) continue;
+
+                        // 각 chain의 자체 centroid를 BC로 사용 (offset 방향 일관성 보장)
+                        var (chainCx, chainCy) = ComputeChainCentroid(p1.chain);
+
+                        foreach (var p2 in pos2List)
+                        {
+                            List<RebarSegment> shifted;
+                            if (Math.Abs(p2.shift) < 1e-9)
+                                shifted = p1.chain;  // Pos2=0: 원본 그대로 (Arc 보존)
+                            else
+                                shifted = LongiCurveSampler.OffsetPolyline(
+                                    p1.chain, Math.Abs(p2.shift), chainCx, chainCy, p2.shift > 0);
+
+                            totalCurves += CreateDirectShapeFromChain(_doc, shifted, p1.color, activeView,
+                                $"기준곡선_{p1.name}_{p2.label}");
+                        }
+                    }
+
+                    tr.Commit();
+                }
+                catch (Exception ex)
+                {
+                    err = $"{ex.GetType().Name}: {ex.Message}";
+                    if (tr.HasStarted()) tr.RollBack();
+                }
+            }
+
+            if (err != null) MessageBox.Show($"미리보기 오류:\n{err}", "오류");
+            else MessageBox.Show($"[{item.SheetKey}] 9개 기준곡선 미리보기 완료\n생성된 segment: {totalCurves}개\n\n색상 — 외측: 빨강 / 중앙: 보라 / 내측: 파랑", "미리보기 완료");
+        }
+
+        /// <summary>
+        /// chain의 모든 segment(Line/Arc)를 하나의 DirectShape로 묶어 생성.
+        /// 색상은 active view의 OverrideGraphicSettings로 적용 (SetProjectionLineColor).
+        /// </summary>
+        private int CreateDirectShapeFromChain(Autodesk.Revit.DB.Document doc, List<RebarSegment> chain,
+            Autodesk.Revit.DB.Color color, Autodesk.Revit.DB.View activeView, string mark)
+        {
+            if (chain == null || chain.Count == 0) return 0;
+
+            var geo = new List<Autodesk.Revit.DB.GeometryObject>();
+            foreach (var seg in chain)
+            {
+                if (seg?.StartPoint == null || seg.EndPoint == null) continue;
+                try
+                {
+                    var p1 = Civil3DCoordinate.ToRevitWorld(seg.StartPoint.X, seg.StartPoint.Y, 0);
+                    var p2 = Civil3DCoordinate.ToRevitWorld(seg.EndPoint.X, seg.EndPoint.Y, 0);
+                    if (p1.DistanceTo(p2) < 0.001) continue;
+
+                    Autodesk.Revit.DB.Curve curve;
+                    if (seg.SegmentType == "Arc" && seg.MidPoint != null)
+                    {
+                        var pMid = Civil3DCoordinate.ToRevitWorld(seg.MidPoint.X, seg.MidPoint.Y, 0);
+                        try { curve = Autodesk.Revit.DB.Arc.Create(p1, p2, pMid); }
+                        catch { curve = Autodesk.Revit.DB.Line.CreateBound(p1, p2); }
+                    }
+                    else
+                    {
+                        curve = Autodesk.Revit.DB.Line.CreateBound(p1, p2);
+                    }
+                    geo.Add(curve);
+                }
+                catch { }
+            }
+            if (geo.Count == 0) return 0;
+
+            try
+            {
+                var ds = Autodesk.Revit.DB.DirectShape.CreateElement(doc,
+                    new Autodesk.Revit.DB.ElementId(Autodesk.Revit.DB.BuiltInCategory.OST_GenericModel));
+                ds.ApplicationId = "RevitRebarModeler";
+                ds.ApplicationDataId = mark;
+                try { ds.Name = mark; } catch { }
+                ds.SetShape(geo);
+                ds.get_Parameter(Autodesk.Revit.DB.BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.Set(mark);
+
+                // 색상 오버라이드 (active view 한정)
+                if (activeView != null)
+                {
+                    try
+                    {
+                        var ogs = new Autodesk.Revit.DB.OverrideGraphicSettings();
+                        ogs.SetProjectionLineColor(color);
+                        ogs.SetCutLineColor(color);
+                        activeView.SetElementOverrides(ds.Id, ogs);
+                    }
+                    catch { }
+                }
+                return geo.Count;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// CivilExportData의 StructureRegions에서 해당 sheetKey의 Cycle1Centerline 좌표 추출.
+        /// </summary>
+        private static bool TryGetStructureCenterline(CivilExportData data, string sheetKey,
+            out double sx, out double sy, out double ex, out double ey)
+        {
+            sx = sy = ex = ey = 0;
+            if (data?.StructureRegions == null || string.IsNullOrEmpty(sheetKey)) return false;
+            var keyRegex = new Regex(@"구조도\((\d+)\)");
+            foreach (var cd in data.StructureRegions)
+            {
+                var m = keyRegex.Match(cd.CycleKey ?? "");
+                if (!m.Success) continue;
+                if ($"구조도({m.Groups[1].Value})" != sheetKey) continue;
+                if (!cd.HasCenterlines) continue;
+                sx = cd.Cycle1CenterlineStartX;
+                sy = cd.Cycle1CenterlineStartY;
+                ex = cd.Cycle1CenterlineEndX;
+                ey = cd.Cycle1CenterlineEndY;
+                return true;
+            }
+            return false;
+        }
+
+        private static (double cx, double cy) ComputeChainCentroid(List<RebarSegment> chain)
+        {
+            if (chain == null || chain.Count == 0) return (0, 0);
+            double sumX = 0, sumY = 0; int n = 0;
+            foreach (var seg in chain)
+            {
+                if (seg?.StartPoint != null) { sumX += seg.StartPoint.X; sumY += seg.StartPoint.Y; n++; }
+                if (seg?.EndPoint   != null) { sumX += seg.EndPoint.X;   sumY += seg.EndPoint.Y;   n++; }
+            }
+            if (n == 0) return (0, 0);
+            return (sumX / n, sumY / n);
+        }
+
     }
 
     public class LongiSheetItem : INotifyPropertyChanged

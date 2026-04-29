@@ -93,6 +93,16 @@ namespace RevitRebarModeler
                 };
                 panel.AddItem(btnPreviewCurves);
 
+                var btnExportRebars = new PushButtonData(
+                    "cmdExportRebarsToJson",
+                    "철근 → JSON\n추출",
+                    dllPath,
+                    "RevitRebarModeler.Commands.ExportRebarsToJsonCommand")
+                {
+                    ToolTip = "현재 문서의 종/횡/전단 철근을 Mark 패턴으로 분류해 JSON으로 추출합니다 (검증/비교용)."
+                };
+                panel.AddItem(btnExportRebars);
+
                 return Result.Succeeded;
             }
             catch (Exception ex)

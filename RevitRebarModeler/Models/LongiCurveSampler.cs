@@ -864,6 +864,84 @@ namespace RevitRebarModeler.Models
         // ============================================================
 
         /// <summary>
+        /// 임의 anchor arc length를 중심으로 양방향 CTC 등분 + chord perpendicular 법선 추출.
+        /// SampleFromCenterWithChordNormal의 anchor 버전 — 구조도 중심선이 base curve와 만나는 위치를 anchor로 사용.
+        /// anchor가 [0, totalLen] 범위 밖이면 totalLen/2로 fallback.
+        /// </summary>
+        public static List<(double arcLen, RebarPoint point, double nx, double ny)> SampleFromAnchorWithChordNormal(
+            List<RebarSegment> segments, double ctcMm, int totalRebarCount, double anchorArcLen)
+        {
+            var results = new List<(double, RebarPoint, double, double)>();
+            if (segments == null || segments.Count == 0 || ctcMm <= 0 || totalRebarCount <= 0) return results;
+
+            double totalLen = TotalLength(segments);
+            if (totalLen <= 0) return results;
+
+            double center = anchorArcLen;
+            if (center < 0 || center > totalLen) center = totalLen / 2.0;
+
+            int sets = totalRebarCount / 2;
+            if (sets <= 0) return results;
+
+            var arcLens = new List<double>();
+            bool hasCenterPoint = (sets % 2 != 0);
+
+            if (hasCenterPoint)
+            {
+                if (center >= -1e-6 && center <= totalLen + 1e-6) arcLens.Add(center);
+                int kMax = (sets - 1) / 2;
+                for (int k = 1; k <= kMax; k++)
+                {
+                    double rPos = center + k * ctcMm;
+                    double lPos = center - k * ctcMm;
+                    if (rPos <= totalLen + 1e-4) arcLens.Add(rPos);
+                    if (lPos >= -1e-4) arcLens.Add(lPos);
+                }
+            }
+            else
+            {
+                int kMax = sets / 2;
+                for (int k = 1; k <= kMax; k++)
+                {
+                    double offset = (k - 0.5) * ctcMm;
+                    double rPos = center + offset;
+                    double lPos = center - offset;
+                    if (rPos <= totalLen + 1e-4) arcLens.Add(rPos);
+                    if (lPos >= -1e-4) arcLens.Add(lPos);
+                }
+            }
+            arcLens.Sort();
+
+            var points = new List<RebarPoint>();
+            foreach (var al in arcLens)
+            {
+                SamplePointAt(segments, al, out var pt);
+                points.Add(pt);
+            }
+
+            for (int i = 0; i < points.Count; i++)
+            {
+                if (points[i] == null) continue;
+                RebarPoint pA = (i > 0) ? points[i - 1] : null;
+                RebarPoint pB = (i < points.Count - 1) ? points[i + 1] : null;
+
+                double chordX, chordY;
+                if (pA != null && pB != null) { chordX = pB.X - pA.X; chordY = pB.Y - pA.Y; }
+                else if (pB != null) { chordX = pB.X - points[i].X; chordY = pB.Y - points[i].Y; }
+                else if (pA != null) { chordX = points[i].X - pA.X; chordY = points[i].Y - pA.Y; }
+                else continue;
+
+                double len = Math.Sqrt(chordX * chordX + chordY * chordY);
+                if (len < 1e-9) continue;
+
+                double nx = -chordY / len;
+                double ny = chordX / len;
+                results.Add((arcLens[i], points[i], nx, ny));
+            }
+            return results;
+        }
+
+        /// <summary>
         /// arc 중앙에서 양방향으로 CTC 등분하여 점 + chord perpendicular 법선 추출.
         /// </summary>
         public static List<(double arcLen, RebarPoint point, double nx, double ny)> SampleFromCenterWithChordNormal(

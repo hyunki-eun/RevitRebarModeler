@@ -50,6 +50,11 @@ namespace RevitRebarModeler.Commands
             var sheetStats = new Dictionary<string, int>();
             var diameterStats = new Dictionary<int, int>();
             var failureDetails = new List<string>();
+            var csvRows = new List<string>();
+            csvRows.Add("structure,dan,placed_outer_x,placed_outer_y,placed_inner_x,placed_inner_y," +
+                        "outer_inner_dist,outer_ctc,inner_ctc," +
+                        "normal_deg,u_deg," +
+                        "raw_outer_x,raw_outer_y,raw_inner_x,raw_inner_y,raw_dist");
 
             using (var tr = new Transaction(doc, "종방향 철근 배치"))
             {
@@ -218,17 +223,43 @@ namespace RevitRebarModeler.Commands
 
                     double offsetArcLen = LongiCurveSampler.TotalLength(offsetSegs);
 
-                    // Step 2-3: 기준 횡철근 곡선(concatenatedBase) 위에서 CTC 등분 → 포인트(c) + 법선(d)
-                    // CTC는 항상 횡철근 선 기준으로 측정되어야 함 (offset된 선 아님).
-                    var samples = LongiCurveSampler.SampleFromCenterWithChordNormal(
-                        concatenatedBase, setting.CtcMm, setting.Count);
+                    // Step 2-3: 구조도 중심선이 offsetSegs와 만나는 위치를 anchor로 사용 → 양방향 CTC 등분
+                    // 중심선이 없거나 교차 못 찾으면 arc 절반(midpoint)으로 fallback
+                    GetCenterline(loadedData, structureKey, out double clSx, out double clSy,
+                        out double clEx, out double clEy, out bool hasCenterline);
+                    double anchorArcLen = LongiCurveSampler.TotalLength(offsetSegs) / 2.0;
+                    string anchorSrc = "midpoint";
+                    if (hasCenterline)
+                    {
+                        if (LongiCurveSampler.FindCenterlineIntersection(
+                                offsetSegs, clSx, clSy, clEx, clEy,
+                                out RebarPoint clHit, out double clArcLen))
+                        {
+                            anchorArcLen = clArcLen;
+                            anchorSrc = $"centerline ({clHit.X:F0},{clHit.Y:F0})";
+                        }
+
+                        // 구조도 중심선을 노란색 DirectShape로 표시 (배치 결과 검증용)
+                        try
+                        {
+                            CreateCenterlineDirectShape(doc, structureKey, clSx, clSy, clEx, clEy);
+                        }
+                        catch { }
+                    }
+                    var samples = LongiCurveSampler.SampleFromAnchorWithChordNormal(
+                        offsetSegs, setting.CtcMm, setting.Count, anchorArcLen);
 
                     debugLog.Add($"  기준 Pos1={setting.Pos1} → arcLen={baseArcLen:N0}, " +
                                  $"baseOffset={baseOffsetMm:+#;-#;0}mm (Pos2={setting.Pos2Shift}), " +
-                                 $"offsetArcLen={offsetArcLen:N0}, offset={setting.OffsetMm:F1}, 샘플={samples.Count}");
+                                 $"offsetArcLen={offsetArcLen:N0}, offset={setting.OffsetMm:F1}, 샘플={samples.Count}, " +
+                                 $"anchor={anchorArcLen:F1}mm ({anchorSrc})");
 
                     // Step 6: 수집 단계 (다 배치될 후보군 모으기)
-                    var candidates = new List<(int OriginalIndex, double ArcLen, RebarPoint OutPt, RebarPoint InPt)>();
+                    var candidates = new List<(int OriginalIndex, double ArcLen,
+                        RebarPoint OutPt, RebarPoint InPt,           // 배치된 점 (offset/2 적용 후)
+                        RebarPoint RawOut, RebarPoint RawIn,         // raw 교차점 (offset/2 적용 전)
+                        double Nx, double Ny,                        // chord normal (ray 방향)
+                        double Ux, double Uy)>();                    // fOuter→fInner 방향 (정규화)
 
                     // 단계별 개수 추적
                     int expectedCount = setting.Count;
@@ -259,9 +290,13 @@ namespace RevitRebarModeler.Commands
                             continue;
                         }
 
+                        // raw 교차점 보존 (offset/2 적용 전)
+                        var rawOut = new RebarPoint { X = fOuter.X, Y = fOuter.Y };
+                        var rawIn  = new RebarPoint { X = fInner.X, Y = fInner.Y };
+
                         // 내측 방향 단위벡터 = fOuter → fInner.
                         // 외측/내측 모두 "반대쪽 교차점을 향해" offset/2 이동 → 벽체 두께 내부로 들어감.
-                        // 샘플점 위치에 의존하지 않으므로 반대 방향으로 튀어나가는 현상이 없음.
+                        double ux = 0, uy = 0;
                         {
                             double dx = fInner.X - fOuter.X;
                             double dy = fInner.Y - fOuter.Y;
@@ -269,7 +304,7 @@ namespace RevitRebarModeler.Commands
                             if (d > 1e-9)
                             {
                                 double mv = setting.OffsetMm / 2.0;
-                                double ux = dx / d, uy = dy / d;
+                                ux = dx / d; uy = dy / d;
 
                                 // 외측 원: fOuter 에서 내측 방향(+u) 으로 offset/2
                                 fOuter = new RebarPoint
@@ -290,7 +325,7 @@ namespace RevitRebarModeler.Commands
                             debugLog.Add($"    [{si}] arc={arcLen:F0} offset=({ptOnOffset.X:F0},{ptOnOffset.Y:F0}) " +
                                          $"n=({nx:F3},{ny:F3}) fIn=({fInner.X:F0},{fInner.Y:F0}) fOut=({fOuter.X:F0},{fOuter.Y:F0})");
 
-                        candidates.Add((si, arcLen, fOuter, fInner));
+                        candidates.Add((si, arcLen, fOuter, fInner, rawOut, rawIn, nx, ny, ux, uy));
                     }
 
                     // Step 7: 실제 생성 진행 (노이즈 필터 제거됨 — 모든 후보 그대로 배치)
@@ -337,6 +372,56 @@ namespace RevitRebarModeler.Commands
                     sheetStats[structureKey] = sheetCreated;
                     debugLog.Add($"[{structureKey}] 전체: Pos1={setting.Pos1}, Pos2={setting.Pos2Shift}, CTC={setting.CtcMm}, " +
                                  $"offset={setting.OffsetMm:F1}, D/2={halfDiam:F1}, 기준arcLen={baseArcLen:F0}mm, created={sheetCreated}");
+
+                    // ── 종철근 배치 검증 표 (단별 좌표/외-내 거리/연속 단 CTC) ──
+                    debugLog.Add($"");
+                    debugLog.Add($"[{structureKey}] === 종철근 배치 검증 (Civil3D X=동/서, Y=입면) ===");
+                    debugLog.Add($"  단 |       외측(X,Y)        |       내측(X,Y)        | 외-내거리 |  외측CTC  |  내측CTC");
+                    debugLog.Add($"  ---+------------------------+------------------------+-----------+-----------+----------");
+                    for (int i = 0; i < orderedCandidates.Count; i++)
+                    {
+                        var c = orderedCandidates[i];
+                        int dan = i + 1;
+                        double outInDist = Math.Sqrt(
+                            Math.Pow(c.OutPt.X - c.InPt.X, 2) +
+                            Math.Pow(c.OutPt.Y - c.InPt.Y, 2));
+                        string outerCtc = "        -", innerCtc = "        -";
+                        double dOuterCtc = double.NaN, dInnerCtc = double.NaN;
+                        if (i + 1 < orderedCandidates.Count)
+                        {
+                            var c2 = orderedCandidates[i + 1];
+                            dOuterCtc = Math.Sqrt(
+                                Math.Pow(c.OutPt.X - c2.OutPt.X, 2) +
+                                Math.Pow(c.OutPt.Y - c2.OutPt.Y, 2));
+                            dInnerCtc = Math.Sqrt(
+                                Math.Pow(c.InPt.X - c2.InPt.X, 2) +
+                                Math.Pow(c.InPt.Y - c2.InPt.Y, 2));
+                            outerCtc = $"{dOuterCtc,9:F2}";
+                            innerCtc = $"{dInnerCtc,9:F2}";
+                        }
+                        debugLog.Add($"  {dan,3}| ({c.OutPt.X,10:F2},{c.OutPt.Y,8:F2}) | ({c.InPt.X,10:F2},{c.InPt.Y,8:F2}) | {outInDist,9:F2} | {outerCtc} | {innerCtc}");
+
+                        // CSV 행 기록
+                        double normalDeg = Math.Atan2(c.Ny, c.Nx) * 180.0 / Math.PI;
+                        if (normalDeg < 0) normalDeg += 360.0;
+                        double uDeg = Math.Atan2(c.Uy, c.Ux) * 180.0 / Math.PI;
+                        if (uDeg < 0) uDeg += 360.0;
+                        double rawDist = Math.Sqrt(
+                            Math.Pow(c.RawOut.X - c.RawIn.X, 2) +
+                            Math.Pow(c.RawOut.Y - c.RawIn.Y, 2));
+                        string outerCtcCsv = double.IsNaN(dOuterCtc) ? "" : dOuterCtc.ToString("F4");
+                        string innerCtcCsv = double.IsNaN(dInnerCtc) ? "" : dInnerCtc.ToString("F4");
+                        csvRows.Add($"{structureKey},{dan}," +
+                                    $"{c.OutPt.X:F4},{c.OutPt.Y:F4},{c.InPt.X:F4},{c.InPt.Y:F4}," +
+                                    $"{outInDist:F4},{outerCtcCsv},{innerCtcCsv}," +
+                                    $"{normalDeg:F4},{uDeg:F4}," +
+                                    $"{c.RawOut.X:F4},{c.RawOut.Y:F4},{c.RawIn.X:F4},{c.RawIn.Y:F4},{rawDist:F4}");
+
+                        // 벡터 검증선 (외측↔내측 페어 잇기, 흰색)
+                        try { CreateVectorVerificationLine(doc, structureKey, dan, c.OutPt, c.InPt); }
+                        catch { }
+                    }
+                    debugLog.Add($"");
 
                     // 목표 개수와 다르면 이유 분석 기록
                     if (sheetCreated != expectedCount)
@@ -398,6 +483,11 @@ namespace RevitRebarModeler.Commands
                 diameterStats, failureDetails, errors, debugLog, sheetSettings, sheetStats);
             if (!string.IsNullOrEmpty(logPath))
                 msg += $"\n\n로그: {logPath}";
+
+            // CSV 파일 저장 (벡터/CTC 검증용)
+            string csvPath = WriteVerificationCsv(csvRows);
+            if (!string.IsNullOrEmpty(csvPath))
+                msg += $"\nCSV: {csvPath}";
 
             TaskDialog.Show("종방향 철근 배치", msg);
             return Result.Succeeded;
@@ -705,6 +795,92 @@ namespace RevitRebarModeler.Commands
 
                 File.WriteAllText(logPath, sb.ToString(), System.Text.Encoding.UTF8);
                 return logPath;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 외측↔내측 종철근 페어를 흰색 DirectShape로 잇기. 벡터 방향 시각 검증용.
+        /// </summary>
+        private void CreateVectorVerificationLine(Document doc, string structureKey, int dan,
+            RebarPoint outPt, RebarPoint inPt)
+        {
+            var p1 = Civil3DCoordinate.ToRevitWorld(outPt.X, outPt.Y, 0);
+            var p2 = Civil3DCoordinate.ToRevitWorld(inPt.X, inPt.Y, 0);
+            if (p1.DistanceTo(p2) < 0.001) return;
+
+            var line = Line.CreateBound(p1, p2);
+            var ds = DirectShape.CreateElement(doc, new ElementId(BuiltInCategory.OST_GenericModel));
+            ds.ApplicationId = "RevitRebarModeler";
+            string mark = $"{structureKey}_벡터검증_{dan}단";
+            ds.ApplicationDataId = mark;
+            try { ds.Name = mark; } catch { }
+            ds.SetShape(new List<GeometryObject> { line });
+            ds.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.Set(mark);
+
+            var activeView = doc.ActiveView;
+            if (activeView != null)
+            {
+                try
+                {
+                    var ogs = new OverrideGraphicSettings();
+                    var white = new Color(255, 255, 255);
+                    ogs.SetProjectionLineColor(white);
+                    ogs.SetCutLineColor(white);
+                    activeView.SetElementOverrides(ds.Id, ogs);
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>
+        /// 구조도 중심선(Cycle1Centerline)을 노란색 DirectShape로 활성 뷰에 표시.
+        /// 배치 결과와 anchor 위치 검증용.
+        /// </summary>
+        private void CreateCenterlineDirectShape(Document doc, string structureKey,
+            double sx, double sy, double ex, double ey)
+        {
+            var p1 = Civil3DCoordinate.ToRevitWorld(sx, sy, 0);
+            var p2 = Civil3DCoordinate.ToRevitWorld(ex, ey, 0);
+            if (p1.DistanceTo(p2) < 0.001) return;
+
+            var line = Line.CreateBound(p1, p2);
+            var ds = DirectShape.CreateElement(doc, new ElementId(BuiltInCategory.OST_GenericModel));
+            ds.ApplicationId = "RevitRebarModeler";
+            string mark = $"구조도중심선_{structureKey}";
+            ds.ApplicationDataId = mark;
+            try { ds.Name = mark; } catch { }
+            ds.SetShape(new List<GeometryObject> { line });
+            ds.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.Set(mark);
+
+            var activeView = doc.ActiveView;
+            if (activeView != null)
+            {
+                try
+                {
+                    var ogs = new OverrideGraphicSettings();
+                    var yellow = new Color(250, 204, 21);
+                    ogs.SetProjectionLineColor(yellow);
+                    ogs.SetCutLineColor(yellow);
+                    activeView.SetElementOverrides(ds.Id, ogs);
+                }
+                catch { }
+            }
+        }
+
+        private string WriteVerificationCsv(List<string> rows)
+        {
+            if (rows == null || rows.Count <= 1) return null;
+            try
+            {
+                string logDir = Path.Combine(Path.GetTempPath(), "RevitRebarModeler", "Logs");
+                Directory.CreateDirectory(logDir);
+                string csvPath = Path.Combine(logDir, $"LongitudinalPlacement_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+                File.WriteAllLines(csvPath, rows, new System.Text.UTF8Encoding(true)); // BOM 포함 → Excel 한글 호환
+                return csvPath;
             }
             catch
             {
