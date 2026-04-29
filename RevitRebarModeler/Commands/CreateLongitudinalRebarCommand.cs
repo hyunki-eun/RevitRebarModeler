@@ -67,6 +67,19 @@ namespace RevitRebarModeler.Commands
                     return Result.Failed;
                 }
 
+                // 기존 벡터검증 DirectShape 정리 (Mark에 "_벡터검증_" 포함)
+                try
+                {
+                    var staleIds = new FilteredElementCollector(doc)
+                        .OfClass(typeof(DirectShape))
+                        .Where(e => (e.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() ?? "")
+                                    .Contains("_벡터검증_"))
+                        .Select(e => e.Id)
+                        .ToList();
+                    if (staleIds.Count > 0) doc.Delete(staleIds);
+                }
+                catch { }
+
                 foreach (var kvp in sheetSettings)
                 {
                     string structureKey = kvp.Key;
@@ -445,10 +458,6 @@ namespace RevitRebarModeler.Commands
                                     $"{outInDist:F4},{outerCtcCsv},{innerCtcCsv}," +
                                     $"{normalDeg:F4},{uDeg:F4}," +
                                     $"{c.RawOut.X:F4},{c.RawOut.Y:F4},{c.RawIn.X:F4},{c.RawIn.Y:F4},{rawDist:F4}");
-
-                        // 벡터 검증선 (외측↔내측 페어 잇기, 흰색)
-                        try { CreateVectorVerificationLine(doc, structureKey, dan, c.OutPt, c.InPt); }
-                        catch { }
                     }
                     debugLog.Add($"");
 
@@ -828,40 +837,6 @@ namespace RevitRebarModeler.Commands
             catch
             {
                 return null;
-            }
-        }
-
-        /// <summary>
-        /// 외측↔내측 종철근 페어를 흰색 DirectShape로 잇기. 벡터 방향 시각 검증용.
-        /// </summary>
-        private void CreateVectorVerificationLine(Document doc, string structureKey, int dan,
-            RebarPoint outPt, RebarPoint inPt)
-        {
-            var p1 = Civil3DCoordinate.ToRevitWorld(outPt.X, outPt.Y, 0);
-            var p2 = Civil3DCoordinate.ToRevitWorld(inPt.X, inPt.Y, 0);
-            if (p1.DistanceTo(p2) < 0.001) return;
-
-            var line = Line.CreateBound(p1, p2);
-            var ds = DirectShape.CreateElement(doc, new ElementId(BuiltInCategory.OST_GenericModel));
-            ds.ApplicationId = "RevitRebarModeler";
-            string mark = $"{structureKey}_벡터검증_{dan}단";
-            ds.ApplicationDataId = mark;
-            try { ds.Name = mark; } catch { }
-            ds.SetShape(new List<GeometryObject> { line });
-            ds.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.Set(mark);
-
-            var activeView = doc.ActiveView;
-            if (activeView != null)
-            {
-                try
-                {
-                    var ogs = new OverrideGraphicSettings();
-                    var white = new Color(255, 255, 255);
-                    ogs.SetProjectionLineColor(white);
-                    ogs.SetCutLineColor(white);
-                    activeView.SetElementOverrides(ds.Id, ogs);
-                }
-                catch { }
             }
         }
 
