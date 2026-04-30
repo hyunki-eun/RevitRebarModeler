@@ -69,11 +69,13 @@ namespace RevitRebarModeler.Commands
             }
 
             int created = 0;
-            int createdStandard = 0;
-            int createdFreeForm = 0;
+            int createdStdHook = 0;     // Standard + RebarHookType 부착
+            int createdStdNoHook = 0;   // Standard, hook 없이 (1차 실패 후 후크 빼고 재시도)
+            int createdFreeForm = 0;    // FreeForm 폴백
             int failed = 0;
             var debugLog = new List<string>();
             var sheetStats = new Dictionary<string, int>();
+            var fallbackLog = new List<string>();   // Standard 실패 → NoHook/FreeForm 폴백 발생 위치
             var errors = new List<string>();
 
             using (var tr = new Transaction(doc, "전단철근 배치"))
@@ -323,7 +325,25 @@ namespace RevitRebarModeler.Commands
 
                             bool ok = TryCreateShearRebar(doc, curves, barType, hookType,
                                 hostElement, mark, out string createMethod, out string err);
-                            if (ok) { created++; sheetCreated++; createdStandard++; }
+                            if (ok)
+                            {
+                                created++; sheetCreated++;
+                                // createMethod prefix 로 분류 — TryCreateShearRebar 의 3개 경로와 매칭
+                                if (createMethod != null && createMethod.StartsWith("StirrupTie+Hook"))
+                                    createdStdHook++;
+                                else if (createMethod != null && createMethod.StartsWith("StirrupTie(NoHook"))
+                                {
+                                    createdStdNoHook++;
+                                    if (fallbackLog.Count < 30)
+                                        fallbackLog.Add($"  NoHook  {mark}");
+                                }
+                                else if (createMethod != null && createMethod.StartsWith("FreeForm"))
+                                {
+                                    createdFreeForm++;
+                                    if (fallbackLog.Count < 30)
+                                        fallbackLog.Add($"  FreeForm {mark} ({createMethod})");
+                                }
+                            }
                             else
                             {
                                 failed++;
@@ -345,14 +365,21 @@ namespace RevitRebarModeler.Commands
 
             // 결과 메시지
             string msg = "═══════════════════════════════════\n" +
-                         "  전단철근 배치 (시각화 모드)\n" +
+                         "  전단철근 배치\n" +
                          "═══════════════════════════════════\n" +
-                         $"── 총 생성: {created}개 (모델 선) | 실패: {failed}개\n";
+                         $"── 총 생성: {created}개 | 실패: {failed}개\n" +
+                         $"  Standard+Hook: {createdStdHook} | Standard(NoHook): {createdStdNoHook} | FreeForm: {createdFreeForm}\n";
             if (sheetStats.Count > 0)
             {
                 msg += "\n── 구조도별 ──\n";
                 foreach (var kv in sheetStats.OrderBy(k => k.Key))
                     msg += $"  {kv.Key}: {kv.Value}개\n";
+            }
+            if (fallbackLog.Count > 0)
+            {
+                msg += $"\n── Standard 실패 → 폴백 위치 ({fallbackLog.Count}건) ──\n";
+                msg += string.Join("\n", fallbackLog);
+                msg += "\n";
             }
             if (errors.Count > 0)
                 msg += "\n오류:\n" + string.Join("\n", errors.Take(20));
