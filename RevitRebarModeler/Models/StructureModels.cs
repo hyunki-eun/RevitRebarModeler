@@ -91,6 +91,12 @@ namespace RevitRebarModeler.Models
         public RebarPoint StartPoint { get; set; }
         public RebarPoint EndPoint { get; set; }
         public RebarPoint MidPoint { get; set; }
+
+        // Arc 전용. JSON에 포함되어 있으나 모델에는 없던 필드.
+        // 같은 원 위 연속 Arc 병합 판단에 사용.
+        public double CenterX { get; set; }
+        public double CenterY { get; set; }
+        public double Radius { get; set; }
     }
 
     /// <summary>2D 좌표 점 (mm)</summary>

@@ -484,8 +484,11 @@ namespace RevitRebarModeler.Commands
             Civil3DCoordinate.CenterlineTransform tx)
         {
             if (segments == null || segments.Count == 0) return null;
+            // Civil3D에서 같은 호가 0-length Line으로 분할되어 들어오는 경우가 있어,
+            // Revit Rebar 생성 전에 degenerate 제거 + 같은 원 위 인접 Arc 병합.
+            var cleaned = RebarSegmentCleaner.Clean(segments);
             var curves = new List<Curve>();
-            foreach (var seg in segments)
+            foreach (var seg in cleaned)
             {
                 Curve curve = SegmentToCurve(seg, yOffsetFt, tx);
                 if (curve != null) curves.Add(curve);
