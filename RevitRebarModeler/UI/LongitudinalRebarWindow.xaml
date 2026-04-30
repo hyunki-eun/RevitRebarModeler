@@ -223,17 +223,17 @@
                 <TextBlock DockPanel.Dock="Top" Text="Step 2. 구조도별 설정" FontSize="14" FontWeight="SemiBold"
                            Foreground="#1E293B" Margin="0,0,0,8"/>
                 <TextBlock DockPanel.Dock="Top"
-                           Text="1번째: 철근 기준 curve (내측/중앙/외측) | 2번째: 1번째에서 radial shift | CTC: 중심 기준 좌우 간격 | 갯수: 구조도당 총 철근 수 (짝수, 4N+2 권장) | offset: 기본값 (D_횡+D_종)/2 — 직경 변경 시 자동 재계산"
+                           Text="1번째: 철근 기준 curve (내측/중앙/외측) | 2번째: 1번째에서 radial shift | CTC: 중심 기준 좌우 간격 | 갯수: 구조도당 총 철근 수 (짝수, 4N+2 권장) | offset: D_횡+D_종 (sample별 dominant 직경 기준 동적 적용, 분해는 옆 컬럼 참고)"
                            FontSize="10" Foreground="#94A3B8" Margin="0,0,0,8" TextWrapping="Wrap"/>
 
                 <ListView x:Name="LstSheets" BorderBrush="#E2E8F0">
                     <ListView.View>
                         <GridView>
-                            <GridViewColumn Header="구조도" Width="80" DisplayMemberBinding="{Binding SheetKey}"/>
-                            <GridViewColumn Header="내측 곡선" Width="65" DisplayMemberBinding="{Binding InnerPolylineCount}"/>
-                            <GridViewColumn Header="외측 곡선" Width="65" DisplayMemberBinding="{Binding OuterPolylineCount}"/>
-                            <GridViewColumn Header="호길이 (mm)" Width="95" DisplayMemberBinding="{Binding ArcLenDisplay}"/>
-                            <GridViewColumn Header="1번째 위치" Width="100">
+                            <GridViewColumn Header="구조도" Width="Auto" DisplayMemberBinding="{Binding SheetKey}"/>
+                            <GridViewColumn Header="내측 곡선" Width="Auto" DisplayMemberBinding="{Binding InnerPolylineCount}"/>
+                            <GridViewColumn Header="외측 곡선" Width="Auto" DisplayMemberBinding="{Binding OuterPolylineCount}"/>
+                            <GridViewColumn Header="호길이 (mm)" Width="Auto" DisplayMemberBinding="{Binding ArcLenDisplay}"/>
+                            <GridViewColumn Header="1번째 위치" Width="Auto">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <ComboBox SelectedValue="{Binding Pos1, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -242,7 +242,7 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="2번째 shift" Width="130">
+                            <GridViewColumn Header="2번째 shift" Width="Auto">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <ComboBox SelectedValue="{Binding Pos2Shift, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -251,7 +251,7 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="CTC (mm)" Width="85">
+                            <GridViewColumn Header="CTC (mm)" Width="Auto">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBox Text="{Binding CtcMm, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -259,7 +259,7 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="직경" Width="85">
+                            <GridViewColumn Header="직경" Width="Auto">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <ComboBox SelectedValue="{Binding DiameterLabel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -268,15 +268,9 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="offset (mm)" Width="95">
-                                <GridViewColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <TextBox Text="{Binding OffsetMm, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                 Width="70" HorizontalAlignment="Center" VerticalContentAlignment="Center" Height="22"/>
-                                    </DataTemplate>
-                                </GridViewColumn.CellTemplate>
-                            </GridViewColumn>
-                            <GridViewColumn Header="갯수" Width="70">
+                            <GridViewColumn Header="offset 분해 (D→offset, mm)" Width="Auto"
+                                            DisplayMemberBinding="{Binding OffsetBreakdownDisplay}"/>
+                            <GridViewColumn Header="갯수" Width="Auto">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBox Text="{Binding Count, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -284,7 +278,7 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="상태" Width="200">
+                            <GridViewColumn Header="상태" Width="Auto">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <Border Background="{Binding StatusBrush}" CornerRadius="3" Padding="8,3"

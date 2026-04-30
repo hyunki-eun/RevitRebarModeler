@@ -240,5 +240,74 @@ namespace RevitRebarModeler.Models
         {
             return ToRevitWorld(p.X, p.Y, revitYFt, tx);
         }
+
+        // ============================================================
+        // TransverseRebarData / RebarSegment / RebarPoint 의 좌표를 통째 변환.
+        // 직경별 분리 큰 거 우선 규칙에서 Cycle 2 폴리라인을 Cycle 1 frame 으로 옮길 때 사용.
+        // ============================================================
+
+        private static RebarPoint TransformPoint(RebarPoint p, CenterlineTransform tx)
+        {
+            if (p == null) return null;
+            tx.Apply(p.X, p.Y, out double x, out double y);
+            return new RebarPoint { X = x, Y = y };
+        }
+
+        public static RebarSegment TransformSegment(RebarSegment src, CenterlineTransform tx)
+        {
+            if (src == null) return null;
+            if (tx.IsIdentity) return src;
+            tx.Apply(src.CenterX, src.CenterY, out double cx, out double cy);
+            return new RebarSegment
+            {
+                SegmentType = src.SegmentType,
+                StartPoint = TransformPoint(src.StartPoint, tx),
+                EndPoint = TransformPoint(src.EndPoint, tx),
+                MidPoint = TransformPoint(src.MidPoint, tx),
+                CenterX = cx,
+                CenterY = cy,
+                Radius = src.Radius
+            };
+        }
+
+        public static TransverseRebarData TransformRebar(TransverseRebarData src, CenterlineTransform tx)
+        {
+            if (src == null) return null;
+            if (tx.IsIdentity) return src;
+
+            tx.Apply(src.CenterX, src.CenterY, out double cx, out double cy);
+
+            var copy = new TransverseRebarData
+            {
+                Id = src.Id,
+                SheetId = src.SheetId,
+                CycleNumber = src.CycleNumber,
+                DiameterMm = src.DiameterMm,
+                MatchedText = src.MatchedText,
+                Layer = src.Layer,
+                CenterX = cx,
+                CenterY = cy
+            };
+            // bounds: 정확히 transform 된 segments 끝점에서 재계산 (회전이 있으면 bbox가 바뀜)
+            double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
+            foreach (var s in src.Segments ?? new List<RebarSegment>())
+            {
+                var ts = TransformSegment(s, tx);
+                copy.Segments.Add(ts);
+                foreach (var pt in new[] { ts.StartPoint, ts.EndPoint, ts.MidPoint })
+                {
+                    if (pt == null) continue;
+                    if (pt.X < minX) minX = pt.X;
+                    if (pt.X > maxX) maxX = pt.X;
+                    if (pt.Y < minY) minY = pt.Y;
+                    if (pt.Y > maxY) maxY = pt.Y;
+                }
+            }
+            if (minX < double.MaxValue)
+            {
+                copy.MinX = minX; copy.MinY = minY; copy.MaxX = maxX; copy.MaxY = maxY;
+            }
+            return copy;
+        }
     }
 }

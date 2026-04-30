@@ -89,6 +89,9 @@ namespace RevitRebarModeler.UI
         {
             _items.Clear();
 
+            // sheet별로 묶어 처리. 표시는 Cycle 1 sheet 단위지만 Cycle 2 폴리라인은 Cycle 1 frame으로
+            // transform 후 큰 거 우선 비교 대상에 포함시킨다.
+            var sheetTransforms = Civil3DCoordinate.BuildSheetTransforms(LoadedData);
             var sheetGroups = LoadedData.TransverseRebars
                 .Where(r => r.CycleNumber == 1)
                 .GroupBy(r => ExtractStructureKey(r.SheetId))
@@ -97,11 +100,19 @@ namespace RevitRebarModeler.UI
 
             foreach (var group in sheetGroups)
             {
-                var sheetRebars = group.ToList();
+                var sheetRebars = group.ToList(); // c1 only — 호길이/수량 표시는 cycle1 기준
+                var cycleTx = sheetTransforms.TryGetValue(group.Key, out var ctx)
+                    ? ctx : Civil3DCoordinate.CenterlineTransform.Identity;
+                var sheetRebarsC2 = LoadedData.TransverseRebars
+                    .Where(r => r.CycleNumber == 2 && ExtractStructureKey(r.SheetId) == group.Key)
+                    .Select(r => Civil3DCoordinate.TransformRebar(r, cycleTx))
+                    .Where(r => r != null && r.Segments != null && r.Segments.Count > 0)
+                    .ToList();
 
-                // 구조도 BoundaryCenter로 내측/외측 분류
+                // 구조도 BoundaryCenter로 내측/외측 분류 — c1 분류만 사용해 길이/수량 집계
                 GetBoundaryCenter(LoadedData, group.Key, out double cx, out double cy, out bool hasCenter);
                 var classification = ClassifyInnerOuter(sheetRebars, cx, cy, hasCenter);
+                var classC2 = ClassifyInnerOuter(sheetRebarsC2, cx, cy, hasCenter);
 
                 double innerLen = 0, outerLen = 0;
                 int innerCnt = 0, outerCnt = 0;
@@ -131,6 +142,44 @@ namespace RevitRebarModeler.UI
                 double avgTransDiam = (avgInnerDiam + avgOuterDiam) / Math.Max(1, (innerDiamCnt > 0 ? 1 : 0) + (outerDiamCnt > 0 ? 1 : 0));
                 if (innerDiamCnt == 0) avgTransDiam = avgOuterDiam;
                 else if (outerDiamCnt == 0) avgTransDiam = avgInnerDiam;
+
+                // 직경 큰 거 우선 규칙으로 sub-span 분할 후 호장 가중평균을 계산하면, 작은 직경이 작은
+                // 구간만 차지하는 경우 평균이 큰 직경 쪽으로 자동 보정됨. 단일 직경 케이스에선 동일값.
+                // chain 은 c1 polyline 기준 (overlay c2 는 직경 비교에만 참여, 길이엔 영향 없음).
+                var diameterBreakdown = new List<(double DiameterMm, double LengthMm)>();
+                try
+                {
+                    var innerC1 = sheetRebars.Where(r => !classification.TryGetValue(r.Id, out var o) || !o).ToList();
+                    var outerC1 = sheetRebars.Where(r =>  classification.TryGetValue(r.Id, out var o) && o).ToList();
+                    var innerC2 = sheetRebarsC2.Where(r => !classC2.TryGetValue(r.Id, out var o) || !o).ToList();
+                    var outerC2 = sheetRebarsC2.Where(r =>  classC2.TryGetValue(r.Id, out var o) && o).ToList();
+
+                    var innerDC = DiameterChain.BuildBigDiameterFirst(innerC1, innerC2);
+                    var outerDC = DiameterChain.BuildBigDiameterFirst(outerC1, outerC2);
+
+                    double weightedInner = innerDC.WeightedAverageDiameterMm;
+                    double weightedOuter = outerDC.WeightedAverageDiameterMm;
+                    if (weightedInner > 0 || weightedOuter > 0)
+                    {
+                        if (weightedInner <= 0) avgTransDiam = weightedOuter;
+                        else if (weightedOuter <= 0) avgTransDiam = weightedInner;
+                        else avgTransDiam = (weightedInner * innerDC.TotalLengthMm + weightedOuter * outerDC.TotalLengthMm)
+                                            / (innerDC.TotalLengthMm + outerDC.TotalLengthMm);
+                    }
+
+                    // 직경별 분해 — inner+outer 합쳐서 unique 직경별 호장 길이 합산
+                    var lenByDiam = new Dictionary<double, double>();
+                    foreach (var span in innerDC.Spans.Concat(outerDC.Spans))
+                    {
+                        if (span.Dominant == null) continue;
+                        double d = Math.Round(span.Dominant.DiameterMm, 1);
+                        double len = Math.Max(0, span.EndArcMm - span.StartArcMm);
+                        lenByDiam[d] = (lenByDiam.TryGetValue(d, out var prev) ? prev : 0) + len;
+                    }
+                    foreach (var kv in lenByDiam.OrderByDescending(p => p.Value))
+                        diameterBreakdown.Add((kv.Key, kv.Value));
+                }
+                catch { /* 가중평균 실패 시 산술평균 그대로 사용 */ }
 
                 // 실제 배치에서 사용할 TrimmedChain 공간 길이 (겹침 제외)
                 double outerTrimmedLen = 0, innerTrimmedLen = 0;
@@ -168,7 +217,8 @@ namespace RevitRebarModeler.UI
                     InnerTrimmedChain = null,
                     OuterTrimmedChain = null,
                     BCx = cx,
-                    BCy = cy
+                    BCy = cy,
+                    DiameterBreakdown = diameterBreakdown
                 };
 
                 try
@@ -184,6 +234,22 @@ namespace RevitRebarModeler.UI
                 item.Revalidate();
                 _items.Add(item);
             }
+
+            // 데이터 로드가 끝난 후 GridView 컬럼 폭을 컨텐츠에 맞춰 재측정.
+            // Width="Auto"는 첫 측정 시점의 컨텐츠 기준이라, ItemsSource 가 채워진 다음에
+            // ActualWidth → NaN 토글로 다시 측정하도록 강제.
+            Dispatcher.BeginInvoke(new System.Action(() =>
+            {
+                if (LstSheets?.View is System.Windows.Controls.GridView gv)
+                {
+                    foreach (var c in gv.Columns)
+                    {
+                        if (double.IsNaN(c.Width))
+                            c.Width = c.ActualWidth;
+                        c.Width = double.NaN;
+                    }
+                }
+            }), System.Windows.Threading.DispatcherPriority.ContextIdle);
         }
 
         private void GetBoundaryCenter(CivilExportData data, string structureKey, out double cx, out double cy, out bool found)
@@ -589,7 +655,29 @@ namespace RevitRebarModeler.UI
         public double BCx { get; set; }
         public double BCy { get; set; }
 
+        /// <summary>
+        /// 큰 거 우선 점유 결과의 (직경, 호장 길이) 페어. inner/outer 모두 합쳐서 unique 직경별 합산.
+        /// 다직경 sheet일 때 OffsetBreakdownDisplay 가 이 정보로 "D22→35 D25→38 ..." 형태 출력.
+        /// </summary>
+        public List<(double DiameterMm, double LengthMm)> DiameterBreakdown { get; set; } = new List<(double, double)>();
+
         public string ArcLenDisplay => $"내측:{InnerArcLenMm:N0} / 외측:{OuterArcLenMm:N0}";
+
+        /// <summary>"D22→35 D25→38 D29→42" 형태. 단일직경이면 항목 1개. mm 단위.</summary>
+        public string OffsetBreakdownDisplay
+        {
+            get
+            {
+                if (DiameterBreakdown == null || DiameterBreakdown.Count == 0)
+                    return $"{OffsetMm:F0}";
+                double dLongi = ParseDiameterStatic(_diameterLabel);
+                // 호장 길이 기준 내림차순 → 가장 긴 게 먼저, 짧은 직경(자투리)은 뒤
+                var entries = DiameterBreakdown
+                    .OrderByDescending(p => p.LengthMm)
+                    .Select(p => $"D{p.DiameterMm:F0}→{p.DiameterMm + dLongi:F0}");
+                return string.Join("  ", entries);
+            }
+        }
 
         private string _pos1 = "중앙";
         public string Pos1 { get => _pos1; set { if (_pos1 != value) { _pos1 = value; Notify(nameof(Pos1)); Revalidate(); } } }
@@ -612,6 +700,7 @@ namespace RevitRebarModeler.UI
                     Notify(nameof(DiameterLabel));
                     // 직경 변경 시 offset 자동 재계산 (사용자가 수동 입력 전까지)
                     RefreshOffsetAuto();
+                    Notify(nameof(OffsetBreakdownDisplay)); // 직경별 분해도 갱신
                 }
             }
         }

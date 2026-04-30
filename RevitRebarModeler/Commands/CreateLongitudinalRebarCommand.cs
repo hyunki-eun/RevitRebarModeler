@@ -118,32 +118,70 @@ namespace RevitRebarModeler.Commands
                     // 6. 교차점에서 종철근 D/2 만큼 안쪽으로 보정
                     // 7. 보정된 점에서 depth 방향으로 철근 생성
 
-                    // --- 준비: cycle1 polyline 수집 및 내측/외측 분류 ---
-                    var sheetRebars = loadedData.TransverseRebars
+                    // --- 준비: cycle1 polyline 수집 + cycle2 polyline은 큰 거 우선 overlay로만 사용 ---
+                    // chain 길이 / 호장 / ray fallback 은 cycle1 기반(이전 동작 유지). cycle2는 cycle1
+                    // frame 으로 transform 후 직경 비교에만 참여 (예: c1=D16, c2=D29 → D29 우선).
+                    var cycle1Rebars = loadedData.TransverseRebars
                         .Where(r => r.CycleNumber == 1 && ExtractStructureKey(r.SheetId) == structureKey)
                         .ToList();
-                    if (sheetRebars.Count == 0)
+                    if (cycle1Rebars.Count == 0)
                     {
                         errors.Add($"[{structureKey}] cycle1 polyline 없음");
                         continue;
                     }
 
+                    var sheetTransforms = Civil3DCoordinate.BuildSheetTransforms(loadedData);
+                    var cycleTx = sheetTransforms.TryGetValue(structureKey, out var ctx)
+                        ? ctx : Civil3DCoordinate.CenterlineTransform.Identity;
+                    var cycle2Rebars = loadedData.TransverseRebars
+                        .Where(r => r.CycleNumber == 2 && ExtractStructureKey(r.SheetId) == structureKey)
+                        .Select(r => Civil3DCoordinate.TransformRebar(r, cycleTx))
+                        .Where(r => r != null && r.Segments != null && r.Segments.Count > 0)
+                        .ToList();
+
                     GetBoundaryCenter(loadedData, structureKey, out double bCx, out double bCy, out bool hasBoundaryCenter);
 
-                    var classification = ClassifyInnerOuter(sheetRebars, bCx, bCy, hasBoundaryCenter);
-                    var outerPolys = sheetRebars.Where(r => classification.TryGetValue(r.Id, out var isOuter) && isOuter).ToList();
-                    var innerPolys = sheetRebars.Where(r => !classification.TryGetValue(r.Id, out var isOuter2) || !isOuter2).ToList();
+                    // ClassifyInnerOuter는 cycle별로 따로 적용
+                    var classC1 = ClassifyInnerOuter(cycle1Rebars, bCx, bCy, hasBoundaryCenter);
+                    var classC2 = ClassifyInnerOuter(cycle2Rebars, bCx, bCy, hasBoundaryCenter);
+                    var classification = new Dictionary<string, bool>();
+                    foreach (var kv in classC1) classification[kv.Key] = kv.Value;
+                    foreach (var kv in classC2) classification[kv.Key] = kv.Value;
 
-                    // 전체 내측/외측 segments 합치기 (이 끊어지지 않은 완전한 곡선들을 교차 탐색용으로 사용)
-                    var innerSegLists = innerPolys.Select(p => p.Segments).Where(s => s != null && s.Count > 0).ToList();
+                    // sheetRebars 는 표시·디버그용 (c1+c2). 계산용은 분리해서 쓴다.
+                    var sheetRebars = cycle1Rebars.Concat(cycle2Rebars).ToList();
+                    var innerPolysC1 = cycle1Rebars.Where(r => !classC1[r.Id]).ToList();
+                    var outerPolysC1 = cycle1Rebars.Where(r =>  classC1[r.Id]).ToList();
+                    var innerPolysC2 = cycle2Rebars.Where(r => !classC2[r.Id]).ToList();
+                    var outerPolysC2 = cycle2Rebars.Where(r =>  classC2[r.Id]).ToList();
+                    var outerPolys = outerPolysC1.Concat(outerPolysC2).ToList();
+                    var innerPolys = innerPolysC1.Concat(innerPolysC2).ToList();
+
+                    debugLog.Add($"  [Cycle 통합] c1 polyline={cycle1Rebars.Count}, c2 polyline={cycle2Rebars.Count} (transform " +
+                                 (cycleTx.IsIdentity ? "Identity" : $"θ={Math.Atan2(cycleTx.Sin, cycleTx.Cos):F4}rad") + ")");
+
+                    // 전체 내측/외측 segments 합치기 — chain 길이 보존 위해 c1 폴리라인만 concat
+                    var innerSegLists = innerPolysC1.Select(p => p.Segments).Where(s => s != null && s.Count > 0).ToList();
                     var concatInner = LongiCurveSampler.ConcatenatePolylines(innerSegLists);
 
-                    var outerSegLists = outerPolys.Select(p => p.Segments).Where(s => s != null && s.Count > 0).ToList();
+                    var outerSegLists = outerPolysC1.Select(p => p.Segments).Where(s => s != null && s.Count > 0).ToList();
                     var concatOuter = LongiCurveSampler.ConcatenatePolylines(outerSegLists);
+
+                    // 직경 큰 거 우선 — c1을 primary chain으로, c2를 overlay로 비교
+                    var innerDiamChain = DiameterChain.BuildBigDiameterFirst(innerPolysC1, innerPolysC2);
+                    var outerDiamChain = DiameterChain.BuildBigDiameterFirst(outerPolysC1, outerPolysC2);
 
                     debugLog.Add($"[{structureKey}] polyline={sheetRebars.Count}, " +
                                  $"outer={outerPolys.Count}({string.Join(",", outerPolys.Select(p => p.Id))}), " +
                                  $"inner={innerPolys.Count}({string.Join(",", innerPolys.Select(p => p.Id))})");
+
+                    // 직경 chain 요약 (sheet별 1번)
+                    debugLog.Add($"  [DiameterChain] inner: total={innerDiamChain.TotalLengthMm:F0}mm, spans={innerDiamChain.Spans.Count}, " +
+                                 $"가중평균직경={innerDiamChain.WeightedAverageDiameterMm:F1}mm");
+                    foreach (var ln in innerDiamChain.DescribeSpans()) debugLog.Add("    inner " + ln);
+                    debugLog.Add($"  [DiameterChain] outer: total={outerDiamChain.TotalLengthMm:F0}mm, spans={outerDiamChain.Spans.Count}, " +
+                                 $"가중평균직경={outerDiamChain.WeightedAverageDiameterMm:F1}mm");
+                    foreach (var ln in outerDiamChain.DescribeSpans()) debugLog.Add("    outer " + ln);
 
                     if (outerPolys.Count == 0 || innerPolys.Count == 0)
                     {
@@ -191,7 +229,8 @@ namespace RevitRebarModeler.Commands
                     {
                         case UI.Pos1Kind.Inner:
                         {
-                            var innerSegListsForBase = innerPolys.Select(p => p.Segments)
+                            // base chain 은 c1 폴리라인만 (c2 포함 시 chain 길이 2배 문제)
+                            var innerSegListsForBase = innerPolysC1.Select(p => p.Segments)
                                 .Where(s => s != null && s.Count > 0).ToList();
                             var chain = LongiCurveSampler.ConcatenatePolylinesTrimmed(innerSegListsForBase);
                             if (chain.Count == 0)
@@ -206,10 +245,12 @@ namespace RevitRebarModeler.Commands
                         case UI.Pos1Kind.Center:
                         {
                             // 내측 곡선 위의 각 점 ↔ 외측 최근점의 중점을 이은 곡선
-                            var innerSegListsForBase = innerPolys.Select(p => p.Segments)
+                            // ※ base chain 은 c1 폴리라인만 — c2 합치면 ConcatenatePolylines가 같은 위치를
+                            //   두 번 traverse 하여 chain 길이가 2배로 부풀려짐.
+                            var innerSegListsForBase = innerPolysC1.Select(p => p.Segments)
                                 .Where(s => s != null && s.Count > 0).ToList();
                             var innerChain = LongiCurveSampler.ConcatenatePolylinesTrimmed(innerSegListsForBase);
-                            var outerSegListsForBase = outerPolys.Select(p => p.Segments)
+                            var outerSegListsForBase = outerPolysC1.Select(p => p.Segments)
                                 .Where(s => s != null && s.Count > 0).ToList();
                             var outerChain = LongiCurveSampler.ConcatenatePolylinesTrimmed(outerSegListsForBase);
                             if (innerChain.Count == 0 || outerChain.Count == 0)
@@ -231,7 +272,8 @@ namespace RevitRebarModeler.Commands
                         case UI.Pos1Kind.Outer:
                         default:
                         {
-                            var outerSegListsForBase = outerPolys.Select(p => p.Segments)
+                            // base chain 은 c1 폴리라인만 (c2 포함 시 chain 길이 2배 문제)
+                            var outerSegListsForBase = outerPolysC1.Select(p => p.Segments)
                                 .Where(s => s != null && s.Count > 0).ToList();
                             var chain = LongiCurveSampler.ConcatenatePolylinesTrimmed(outerSegListsForBase);
                             if (chain.Count == 0)
@@ -305,6 +347,12 @@ namespace RevitRebarModeler.Commands
                     int expectedCount = setting.Count;
                     int samplesGenerated = samples.Count * 2; // 쌍(외측+내측)이므로 ×2
                     int innerMissCount = 0, outerMissCount = 0, bothMissCount = 0;
+                    // 직경별 분리 검증 카운터 — 같은 inner/outer chain 안에 직경이 1종 이상이면 multi
+                    bool innerIsMulti = innerDiamChain.All.Select(p => Math.Round(p.DiameterMm, 1)).Distinct().Count() > 1;
+                    bool outerIsMulti = outerDiamChain.All.Select(p => Math.Round(p.DiameterMm, 1)).Distinct().Count() > 1;
+                    int domHitInner = 0, domMissInner = 0;
+                    int domHitOuter = 0, domMissOuter = 0;
+                    var domDiamUsage = new Dictionary<string, int>(); // "inner H29" → 횟수
 
                     for (int si = 0; si < samples.Count; si++)
                     {
@@ -321,12 +369,37 @@ namespace RevitRebarModeler.Commands
                         }
 
                         // Step 4-5: 법선 + 역법선 가상 선(e) → 횡철근 내부/외부와 교차
+                        // ★ 직경 큰 거 우선: sample 위치를 지배하는 폴리라인을 ray 타겟으로 사용.
+                        //   dominant 매칭 실패 시 단일 직경 케이스이므로 기존 concat 으로 fallback.
+                        var domInner = innerDiamChain.DominantAtPoint(ptOnOffset);
+                        var domOuter = outerDiamChain.DominantAtPoint(ptOnOffset);
+                        double dInnerDom = domInner?.DiameterMm ?? 0;
+                        double dOuterDom = domOuter?.DiameterMm ?? 0;
+
+                        var innerTarget = (domInner?.Source?.Segments != null && domInner.Source.Segments.Count > 0)
+                            ? domInner.Source.Segments : concatInner;
+                        var outerTarget = (domOuter?.Source?.Segments != null && domOuter.Source.Segments.Count > 0)
+                            ? domOuter.Source.Segments : concatOuter;
+
+                        if (domInner != null) domHitInner++; else domMissInner++;
+                        if (domOuter != null) domHitOuter++; else domMissOuter++;
+                        if (domInner != null)
+                        {
+                            string k = $"inner H{dInnerDom:F0}";
+                            domDiamUsage[k] = (domDiamUsage.TryGetValue(k, out var cnt) ? cnt : 0) + 1;
+                        }
+                        if (domOuter != null)
+                        {
+                            string k = $"outer H{dOuterDom:F0}";
+                            domDiamUsage[k] = (domDiamUsage.TryGetValue(k, out var cnt) ? cnt : 0) + 1;
+                        }
+
                         RebarPoint fInner = null, fOuter = null;
 
                         bool hitInner = LongiCurveSampler.IntersectRayWithPolyline(
-                            concatInner, ptOnOffset.X, ptOnOffset.Y, nx, ny, false, out fInner);
+                            innerTarget, ptOnOffset.X, ptOnOffset.Y, nx, ny, false, out fInner);
                         bool hitOuter = LongiCurveSampler.IntersectRayWithPolyline(
-                            concatOuter, ptOnOffset.X, ptOnOffset.Y, nx, ny, false, out fOuter);
+                            outerTarget, ptOnOffset.X, ptOnOffset.Y, nx, ny, false, out fOuter);
 
                         // ★ 내측·외측 모두 교차해야만 후보군에 편입
                         if (!hitInner || !hitOuter)
@@ -346,6 +419,29 @@ namespace RevitRebarModeler.Commands
 
                         // 내측 방향 단위벡터 = fOuter → fInner.
                         // 외측/내측 모두 "반대쪽 교차점을 향해" offset/2 이동 → 벽체 두께 내부로 들어감.
+                        //
+                        // 단일 직경 케이스: setting.OffsetMm 그대로 사용 (사용자가 UI에서 수동 오버라이드한
+                        // 경우를 보존하기 위해 동적 계산을 우회).
+                        // 다직경 케이스: D_횡_dom + D_종 (합) 으로 sample별 offset 동적 계산.
+                        // ※ setting.OffsetMm 자체가 (D_횡_avg + D_종) 합 형식이므로, dynamic도 합 형식으로
+                        //   맞춰야 mv = offset/2 단계에서 동일한 단위가 됨.
+                        double dLongiMm = setting.DiameterMm;
+                        double offsetInnerMm, offsetOuterMm;
+                        if (innerIsMulti || outerIsMulti)
+                        {
+                            offsetInnerMm = (dInnerDom > 0 && dLongiMm > 0)
+                                ? (dInnerDom + dLongiMm) : setting.OffsetMm;
+                            offsetOuterMm = (dOuterDom > 0 && dLongiMm > 0)
+                                ? (dOuterDom + dLongiMm) : setting.OffsetMm;
+                        }
+                        else
+                        {
+                            offsetInnerMm = setting.OffsetMm;
+                            offsetOuterMm = setting.OffsetMm;
+                        }
+                        double mvInnerSample = offsetInnerMm / 2.0;
+                        double mvOuterSample = offsetOuterMm / 2.0;
+
                         double ux = 0, uy = 0;
                         {
                             double dx = fInner.X - fOuter.X;
@@ -353,29 +449,40 @@ namespace RevitRebarModeler.Commands
                             double d = Math.Sqrt(dx * dx + dy * dy);
                             if (d > 1e-9)
                             {
-                                double mv = setting.OffsetMm / 2.0;
                                 ux = dx / d; uy = dy / d;
 
-                                // 외측 원: fOuter 에서 내측 방향(+u) 으로 offset/2
+                                // 외측 원: fOuter 에서 내측 방향(+u) 으로 offsetOuter/2
                                 fOuter = new RebarPoint
                                 {
-                                    X = fOuter.X + ux * mv,
-                                    Y = fOuter.Y + uy * mv
+                                    X = fOuter.X + ux * mvOuterSample,
+                                    Y = fOuter.Y + uy * mvOuterSample
                                 };
-                                // 내측 원: fInner 에서 외측 방향(-u) 으로 offset/2
+                                // 내측 원: fInner 에서 외측 방향(-u) 으로 offsetInner/2
                                 fInner = new RebarPoint
                                 {
-                                    X = fInner.X - ux * mv,
-                                    Y = fInner.Y - uy * mv
+                                    X = fInner.X - ux * mvInnerSample,
+                                    Y = fInner.Y - uy * mvInnerSample
                                 };
                             }
                         }
 
                         if (si < 3 || si >= samples.Count - 3)
                             debugLog.Add($"    [{si}] arc={arcLen:F0} offset=({ptOnOffset.X:F0},{ptOnOffset.Y:F0}) " +
-                                         $"n=({nx:F3},{ny:F3}) fIn=({fInner.X:F0},{fInner.Y:F0}) fOut=({fOuter.X:F0},{fOuter.Y:F0})");
+                                         $"n=({nx:F3},{ny:F3}) fIn=({fInner.X:F0},{fInner.Y:F0}) fOut=({fOuter.X:F0},{fOuter.Y:F0}) " +
+                                         $"domIn=H{dInnerDom:F0}/domOut=H{dOuterDom:F0} " +
+                                         $"offIn={offsetInnerMm:F0}/offOut={offsetOuterMm:F0}mm");
 
                         candidates.Add((si, arcLen, fOuter, fInner, rawOut, rawIn, nx, ny, ux, uy));
+                    }
+
+                    // 직경 chain 사용 통계 — 단일/다직경 케이스 식별 + 어느 직경이 얼마나 ray 타겟으로 쓰였는지
+                    debugLog.Add($"  [DiameterChain 사용] inner multi={innerIsMulti}, outer multi={outerIsMulti}");
+                    debugLog.Add($"    dominant 매칭 inner={domHitInner}/{samples.Count} (miss={domMissInner}), " +
+                                 $"outer={domHitOuter}/{samples.Count} (miss={domMissOuter})");
+                    if (domDiamUsage.Count > 0)
+                    {
+                        foreach (var kv in domDiamUsage.OrderBy(k => k.Key))
+                            debugLog.Add($"    {kv.Key}: {kv.Value}회");
                     }
 
                     // Step 7: 실제 생성 진행 (노이즈 필터 제거됨 — 모든 후보 그대로 배치)
