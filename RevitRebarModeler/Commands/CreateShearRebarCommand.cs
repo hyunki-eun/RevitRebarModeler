@@ -73,9 +73,14 @@ namespace RevitRebarModeler.Commands
             int createdStdNoHook = 0;   // Standard, hook 없이 (1차 실패 후 후크 빼고 재시도)
             int createdFreeForm = 0;    // FreeForm 폴백
             int failed = 0;
+            // 형상 검증 카운터 — 시각 대신 로그로 hook 방향 / 평면 정합 자동 체크
+            int vfPlaneOK = 0, vfPlaneBad = 0;
+            int vfHookInward = 0, vfHookSwap = 0, vfHookMixed = 0, vfHookUnknown = 0;
             var debugLog = new List<string>();
             var sheetStats = new Dictionary<string, int>();
             var fallbackLog = new List<string>();   // Standard 실패 → NoHook/FreeForm 폴백 발생 위치
+            var verifyAnomalies = new List<string>(); // hook swap / plane bad / mixed 인 rebar 목록
+            var verifyDetail = new List<string>();    // 구조도별 첫 rebar 4코너 좌표 dump
             var errors = new List<string>();
 
             using (var tr = new Transaction(doc, "전단철근 배치"))
@@ -244,6 +249,7 @@ namespace RevitRebarModeler.Commands
 
                     int sheetCreated = 0;
                     int sampleLogged = 0;
+                    bool verifyDumpedForThisSheet = false;
                     // ── 종방향 홀수 단마다 × 횡방향 묶음 → 사각형 1개씩 ──
                     int oddIndex = 0; // 종방향 홀수 단 카운터 (0=1단, 1=3단, 2=5단...)
 
@@ -323,8 +329,13 @@ namespace RevitRebarModeler.Commands
 
                             string mark = $"{structureKey}_shear_종{dan}_횡{sDan}-{eDan}_{(isGroupA ? "A" : "B")}";
 
+                            // 입력 normal 미리 산출 (검증에서 재사용)
+                            XYZ inputNormal = XYZ.BasisY;
+                            if (TryComputePlane(curves, out _, out _, out XYZ cn))
+                                inputNormal = cn;
+
                             bool ok = TryCreateShearRebar(doc, curves, barType, hookType,
-                                hostElement, mark, out string createMethod, out string err);
+                                hostElement, mark, out string createMethod, out string err, out Rebar createdRebar);
                             if (ok)
                             {
                                 created++; sheetCreated++;
@@ -342,6 +353,44 @@ namespace RevitRebarModeler.Commands
                                     createdFreeForm++;
                                     if (fallbackLog.Count < 30)
                                         fallbackLog.Add($"  FreeForm {mark} ({createMethod})");
+                                }
+
+                                // ── 형상 검증 ──
+                                List<string> curveDump = !verifyDumpedForThisSheet ? new List<string>() : null;
+                                var vf = VerifyShearRebar(createdRebar, pSI, pSO, pEO, pEI, inputNormal, ndx, ndz, curveDump);
+                                if (vf.PlaneOK) vfPlaneOK++; else vfPlaneBad++;
+                                if (!vf.HookKnown) vfHookUnknown++;
+                                else if (vf.HookInwardOK) vfHookInward++;
+                                else if (vf.HookOutwardSwap) vfHookSwap++;
+                                else if (vf.HookMixed) vfHookMixed++;
+
+                                // anomaly 만 모음
+                                if (!vf.PlaneOK || vf.HookOutwardSwap || vf.HookMixed)
+                                {
+                                    if (verifyAnomalies.Count < 30)
+                                        verifyAnomalies.Add(
+                                            $"  {mark}  plane(|nY|={vf.NormalY:F3}, |n·rad|={vf.NormalDotRadial:F3}) " +
+                                            $"hook(s.dy={vf.HookStartDY:F3}, e.dy={vf.HookEndDY:F3})");
+                                }
+
+                                // 구조도별 첫 rebar 4코너 dump (PASS/FAIL과 무관하게 한 번)
+                                if (!verifyDumpedForThisSheet)
+                                {
+                                    verifyDumpedForThisSheet = true;
+                                    verifyDetail.Add($"[{structureKey}] 첫 rebar = {mark}");
+                                    verifyDetail.Add($"  pSI=({pSI.X:F3},{pSI.Y:F3},{pSI.Z:F3})  pSO=({pSO.X:F3},{pSO.Y:F3},{pSO.Z:F3})");
+                                    verifyDetail.Add($"  pEO=({pEO.X:F3},{pEO.Y:F3},{pEO.Z:F3})  pEI=({pEI.X:F3},{pEI.Y:F3},{pEI.Z:F3})  (ft)");
+                                    verifyDetail.Add($"  inputNormal=({inputNormal.X:F4},{inputNormal.Y:F4},{inputNormal.Z:F4}) " +
+                                                     $"|nY|={vf.NormalY:F4} |n·rad|={vf.NormalDotRadial:F4}  " +
+                                                     $"PlaneOK={vf.PlaneOK}");
+                                    verifyDetail.Add($"  hookStartDY={vf.HookStartDY:F4}ft  hookEndDY={vf.HookEndDY:F4}ft  " +
+                                                     $"InwardOK={vf.HookInwardOK}  Swap={vf.HookOutwardSwap}  Mixed={vf.HookMixed}  " +
+                                                     $"Known={vf.HookKnown}");
+                                    if (curveDump != null && curveDump.Count > 0)
+                                    {
+                                        verifyDetail.Add($"  Revit centerline curves ({curveDump.Count}개, suppressBendRadius=true):");
+                                        verifyDetail.AddRange(curveDump);
+                                    }
                                 }
                             }
                             else
@@ -368,12 +417,26 @@ namespace RevitRebarModeler.Commands
                          "  전단철근 배치\n" +
                          "═══════════════════════════════════\n" +
                          $"── 총 생성: {created}개 | 실패: {failed}개\n" +
-                         $"  Standard+Hook: {createdStdHook} | Standard(NoHook): {createdStdNoHook} | FreeForm: {createdFreeForm}\n";
+                         $"  Standard+Hook: {createdStdHook} | Standard(NoHook): {createdStdNoHook} | FreeForm: {createdFreeForm}\n" +
+                         $"  형상 검증: Plane OK/Bad = {vfPlaneOK}/{vfPlaneBad} | " +
+                         $"Hook In={vfHookInward} Swap={vfHookSwap} Mixed={vfHookMixed} Unknown={vfHookUnknown}\n";
             if (sheetStats.Count > 0)
             {
                 msg += "\n── 구조도별 ──\n";
                 foreach (var kv in sheetStats.OrderBy(k => k.Key))
                     msg += $"  {kv.Key}: {kv.Value}개\n";
+            }
+            if (verifyDetail.Count > 0)
+            {
+                msg += "\n── 검증 상세 (구조도별 첫 rebar) ──\n";
+                msg += string.Join("\n", verifyDetail);
+                msg += "\n";
+            }
+            if (verifyAnomalies.Count > 0)
+            {
+                msg += $"\n── 검증 이상 ({verifyAnomalies.Count}건) ──\n";
+                msg += string.Join("\n", verifyAnomalies);
+                msg += "\n";
             }
             if (fallbackLog.Count > 0)
             {
@@ -658,10 +721,11 @@ namespace RevitRebarModeler.Commands
         // ============================================================
         private bool TryCreateShearRebar(Document doc, List<Curve> curves, RebarBarType barType,
             RebarHookType hookType, Element hostElement, string mark,
-            out string createMethod, out string errorDetail)
+            out string createMethod, out string errorDetail, out Rebar createdRebar)
         {
             createMethod = null;
             errorDetail = null;
+            createdRebar = null;
             Rebar rebar = null;
             string stdErr = null, ffErr = null;
             RebarFreeFormValidationResult validation = RebarFreeFormValidationResult.Success;
@@ -739,6 +803,7 @@ namespace RevitRebarModeler.Commands
 
             rebar.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.Set(mark);
             rebar.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.Set($"{mark}|{createMethod}");
+            createdRebar = rebar;
             return true;
         }
 
@@ -775,6 +840,85 @@ namespace RevitRebarModeler.Commands
                 return all.FirstOrDefault(h => Math.Abs(h.HookAngle - Math.PI / 2.0) < 0.01)
                     ?? all.FirstOrDefault();
             }
+        }
+
+        // ============================================================
+        // 시각 대신 로그로 형상 검증
+        //   - PlaneOK : 입력 normal Y성분이 ~0 (U자 평면이 종축 Y를 포함)
+        //   - HookDir : 시작 hook 끝의 ΔY > 0 AND 끝 hook 끝의 ΔY < 0 → 양쪽 모두 U 안쪽으로 굽음
+        //               반대면 Left/Right swap 필요
+        //   - 4코너 좌표는 첫 rebar 한정으로 풀 dump
+        // ============================================================
+        private struct ShearVerifyResult
+        {
+            public bool HookKnown;
+            public double HookStartDY;   // hook[0] 자유단 - pSI.Y
+            public double HookEndDY;     // hook[1] 자유단 - pEI.Y
+            public bool HookInwardOK;    // 둘 다 U자 안쪽으로 굽음
+            public bool HookOutwardSwap; // 둘 다 바깥쪽 (Left/Right swap 필요)
+            public bool HookMixed;       // 한쪽만 안쪽 (드물지만 가능)
+
+            public double NormalY;       // 입력 normal의 Y 성분 절대값
+            public double NormalDotRadial;
+            public bool PlaneOK;
+        }
+
+        private ShearVerifyResult VerifyShearRebar(Rebar rebar,
+            XYZ pSI, XYZ pSO, XYZ pEO, XYZ pEI,
+            XYZ inputNormal, double ndx, double ndz,
+            List<string> curveDumpOut)
+        {
+            var r = new ShearVerifyResult();
+
+            // 평면 검증 — U자 평면은 Y축을 포함해야 하므로 |normal · Y| ≈ 0
+            r.NormalY = inputNormal != null ? Math.Abs(inputNormal.Y) : 1.0;
+            r.NormalDotRadial = inputNormal != null
+                ? Math.Abs(inputNormal.X * ndx + inputNormal.Z * ndz)
+                : 1.0;
+            r.PlaneOK = (r.NormalY < 0.01) && (r.NormalDotRadial < 0.01);
+
+            // Hook 자유단 위치 — Revit이 만들어낸 centerline curves 에서 직접 읽음.
+            // suppressBendRadius=true 로 호출해야 코너가 샤프해서 pSI/pEI가 단일 curve의
+            // endpoint로 그대로 나타남. false 면 코너에 bend arc가 끼어 매칭 실패.
+            try
+            {
+                var rebarCurves = rebar.GetCenterlineCurves(false, false, true,
+                    MultiplanarOption.IncludeOnlyPlanarCurves, 0);
+                if (rebarCurves == null || rebarCurves.Count == 0) return r;
+
+                // 디버그 — 첫 rebar의 curve 토폴로지를 확인할 수 있도록 호출자에 그대로 전달
+                if (curveDumpOut != null)
+                {
+                    for (int i = 0; i < rebarCurves.Count; i++)
+                    {
+                        var c = rebarCurves[i];
+                        XYZ a = c.GetEndPoint(0), b = c.GetEndPoint(1);
+                        double len = c.Length;
+                        curveDumpOut.Add($"    curve[{i}] {c.GetType().Name} len={len:F4}ft  " +
+                                         $"({a.X:F3},{a.Y:F3},{a.Z:F3})→({b.X:F3},{b.Y:F3},{b.Z:F3})");
+                    }
+                }
+
+                // Revit이 리턴하는 centerline은 한 끝(=시작 hook 자유단)부터 다른 끝(=끝 hook 자유단)까지
+                // 연속된 polyline 형태이므로, 첫·마지막 curve의 외곽 endpoint가 곧 hook 자유단.
+                // (※ pSI/pEI 근방 매칭은 Revit이 hook 부착하느라 leg를 안쪽으로 단축시켜 실패함)
+                XYZ startFreeEnd = rebarCurves[0].GetEndPoint(0);
+                XYZ endFreeEnd = rebarCurves[rebarCurves.Count - 1].GetEndPoint(1);
+
+                r.HookKnown = true;
+                r.HookStartDY = startFreeEnd.Y - pSI.Y;
+                r.HookEndDY = endFreeEnd.Y - pEI.Y;
+
+                // pSI는 Y_start, pEI는 Y_end (Y_end > Y_start). U 안쪽 = pSI 기준 +Y, pEI 기준 -Y.
+                bool sIn = r.HookStartDY > 0;
+                bool eIn = r.HookEndDY < 0;
+                if (sIn && eIn) r.HookInwardOK = true;
+                else if (!sIn && !eIn) r.HookOutwardSwap = true;
+                else r.HookMixed = true;
+            }
+            catch { /* HookKnown stays false */ }
+
+            return r;
         }
 
         /// <summary>
