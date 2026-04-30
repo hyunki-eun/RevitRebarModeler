@@ -412,51 +412,65 @@ namespace RevitRebarModeler.Commands
                 tr.Commit();
             }
 
-            // 결과 메시지
-            string msg = "═══════════════════════════════════\n" +
-                         "  전단철근 배치\n" +
-                         "═══════════════════════════════════\n" +
-                         $"── 총 생성: {created}개 | 실패: {failed}개\n" +
-                         $"  Standard+Hook: {createdStdHook} | Standard(NoHook): {createdStdNoHook} | FreeForm: {createdFreeForm}\n" +
-                         $"  형상 검증: Plane OK/Bad = {vfPlaneOK}/{vfPlaneBad} | " +
-                         $"Hook In={vfHookInward} Swap={vfHookSwap} Mixed={vfHookMixed} Unknown={vfHookUnknown}\n";
+            // ── 로그 파일용 verbose 내용 (전부 보존) ──
+            string verboseLog = "═══════════════════════════════════\n" +
+                                "  전단철근 배치\n" +
+                                "═══════════════════════════════════\n" +
+                                $"── 총 생성: {created}개 | 실패: {failed}개\n" +
+                                $"  Standard+Hook: {createdStdHook} | Standard(NoHook): {createdStdNoHook} | FreeForm: {createdFreeForm}\n" +
+                                $"  형상 검증: Plane OK/Bad = {vfPlaneOK}/{vfPlaneBad} | " +
+                                $"Hook In={vfHookInward} Swap={vfHookSwap} Mixed={vfHookMixed} Unknown={vfHookUnknown}\n";
             if (sheetStats.Count > 0)
             {
-                msg += "\n── 구조도별 ──\n";
+                verboseLog += "\n── 구조도별 ──\n";
                 foreach (var kv in sheetStats.OrderBy(k => k.Key))
-                    msg += $"  {kv.Key}: {kv.Value}개\n";
+                    verboseLog += $"  {kv.Key}: {kv.Value}개\n";
             }
             if (verifyDetail.Count > 0)
-            {
-                msg += "\n── 검증 상세 (구조도별 첫 rebar) ──\n";
-                msg += string.Join("\n", verifyDetail);
-                msg += "\n";
-            }
+                verboseLog += "\n── 검증 상세 (구조도별 첫 rebar) ──\n" + string.Join("\n", verifyDetail) + "\n";
             if (verifyAnomalies.Count > 0)
-            {
-                msg += $"\n── 검증 이상 ({verifyAnomalies.Count}건) ──\n";
-                msg += string.Join("\n", verifyAnomalies);
-                msg += "\n";
-            }
+                verboseLog += $"\n── 검증 이상 ({verifyAnomalies.Count}건) ──\n" + string.Join("\n", verifyAnomalies) + "\n";
             if (fallbackLog.Count > 0)
-            {
-                msg += $"\n── Standard 실패 → 폴백 위치 ({fallbackLog.Count}건) ──\n";
-                msg += string.Join("\n", fallbackLog);
-                msg += "\n";
-            }
+                verboseLog += $"\n── Standard 실패 → 폴백 위치 ({fallbackLog.Count}건) ──\n" + string.Join("\n", fallbackLog) + "\n";
             if (errors.Count > 0)
-                msg += "\n오류:\n" + string.Join("\n", errors.Take(20));
+                verboseLog += "\n오류:\n" + string.Join("\n", errors.Take(20));
 
-            // 로그 파일
+            string logPath = null;
             try
             {
                 string logDir = Path.Combine(Path.GetTempPath(), "RevitRebarModeler", "Logs");
                 Directory.CreateDirectory(logDir);
-                string logPath = Path.Combine(logDir, $"ShearRebar_{DateTime.Now:yyyyMMdd_HHmmss}.log");
-                File.WriteAllText(logPath, msg + "\n\n[디버그]\n" + string.Join("\n", debugLog), System.Text.Encoding.UTF8);
-                msg += $"\n\n로그: {logPath}";
+                logPath = Path.Combine(logDir, $"ShearRebar_{DateTime.Now:yyyyMMdd_HHmmss}.log");
+                File.WriteAllText(logPath, verboseLog + "\n\n[디버그]\n" + string.Join("\n", debugLog), System.Text.Encoding.UTF8);
             }
             catch { }
+
+            // ── 사용자 다이얼로그: 핵심 결과만 (검증·폴백 디테일은 모두 로그로) ──
+            string msg = $"전단철근 배치 완료\n\n" +
+                         $"  생성: {created}개  /  실패: {failed}개";
+
+            if (sheetStats.Count > 0)
+            {
+                msg += "\n\n  구조도별";
+                foreach (var kv in sheetStats.OrderBy(k => k.Key))
+                    msg += $"\n    {kv.Key}: {kv.Value}개";
+            }
+
+            int anomalyCount = vfPlaneBad + vfHookSwap + vfHookMixed;
+            if (anomalyCount > 0)
+                msg += $"\n\n검증 이상: {anomalyCount}건 — 자세한 내용은 로그 참고";
+
+            if (errors.Count > 0)
+            {
+                msg += "\n\n오류:";
+                foreach (var err in errors.Take(8))
+                    msg += $"\n  · {err}";
+                if (errors.Count > 8)
+                    msg += $"\n  · ... 외 {errors.Count - 8}건";
+            }
+
+            if (!string.IsNullOrEmpty(logPath))
+                msg += $"\n\n자세한 로그: {logPath}";
 
             TaskDialog.Show("전단철근 배치", msg);
             return Result.Succeeded;

@@ -102,7 +102,7 @@ namespace RevitRebarModeler.Commands
                 tr.Commit();
             }
 
-            // ── 전체 로그 파일 저장 ──
+            // ── 전체 로그 파일 저장 (디테일은 모두 로그로) ──
             string logPath = null;
             try
             {
@@ -111,7 +111,7 @@ namespace RevitRebarModeler.Commands
                 string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 logPath = Path.Combine(logDir, $"CreateStructure_{stamp}.log");
 
-                var header = new List<string>
+                var lines = new List<string>
                 {
                     $"=== 구조 프레임 생성 로그 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===",
                     $"성공: {created} / 실패: {failed} / 선택 사이클: {selectedCycles.Count}",
@@ -119,25 +119,43 @@ namespace RevitRebarModeler.Commands
                     $"GlobalOrigin: ({Civil3DCoordinate.GlobalOriginXMm:F1}, {Civil3DCoordinate.GlobalOriginYMm:F1}) mm [IsSet={Civil3DCoordinate.IsSet}]",
                     ""
                 };
-                File.WriteAllLines(logPath, header.Concat(fullLog));
+                lines.AddRange(fullLog);
+                if (placementLog.Count > 0)
+                {
+                    lines.Add("");
+                    lines.Add("── 배치 검증 ──");
+                    lines.AddRange(placementLog);
+                }
+                if (failedNames.Count > 0)
+                {
+                    lines.Add("");
+                    lines.Add("── 실패/경고 목록 ──");
+                    lines.AddRange(failedNames);
+                }
+                File.WriteAllLines(logPath, lines);
             }
             catch (Exception ex)
             {
                 logPath = $"(로그 저장 실패: {ex.Message})";
             }
 
-            string msg = $"구조 프레임 생성: {created}개\n실패: {failed}개\n돌출 깊이: {depthMm}mm\n" +
-                         $"GlobalOrigin: ({Civil3DCoordinate.GlobalOriginXMm:F1}, {Civil3DCoordinate.GlobalOriginYMm:F1}) mm " +
-                         $"[IsSet={Civil3DCoordinate.IsSet}]\n" +
-                         $"전체 로그: {logPath}";
-
-            if (placementLog.Count > 0)
-                msg += "\n\n── 배치 검증 ──\n" + string.Join("\n", placementLog);
+            // ── 사용자 다이얼로그: 핵심 결과만 ──
+            string msg = $"구조물 생성 완료\n\n" +
+                         $"  생성: {created}개  /  실패: {failed}개\n" +
+                         $"  돌출 길이: {depthMm:N0}mm";
 
             if (failedNames.Count > 0)
-                msg += "\n\n── 실패/경고 목록 ──\n" + string.Join("\n", failedNames);
+            {
+                msg += "\n\n실패 항목:";
+                foreach (var name in failedNames.Take(10))
+                    msg += $"\n  · {name}";
+                if (failedNames.Count > 10)
+                    msg += $"\n  · ... 외 {failedNames.Count - 10}건";
+            }
 
-            TaskDialog.Show("구조 프레임 생성 완료", msg);
+            msg += $"\n\n자세한 로그: {logPath}";
+
+            TaskDialog.Show("구조물 생성", msg);
 
             return Result.Succeeded;
         }

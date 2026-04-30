@@ -609,38 +609,40 @@ namespace RevitRebarModeler.Commands
             // 세션 캐시에 종방향 설정 저장 → 전단철근 배치 시 재사용 (파일 재오픈 후 Revit 역파싱으로도 복원 가능)
             SessionCache.LongitudinalSettings = new System.Collections.Generic.Dictionary<string, UI.LongitudinalSheetSetting>(sheetSettings);
 
-            string msg = "═══════════════════════════════════\n" +
-                         "  종방향 철근 배치 완료\n" +
-                         "═══════════════════════════════════\n" +
-                         $"── 총 배치: {created}개 | 실패: {failed}개\n" +
-                         $"│  ── Standard: {createdStandard}개\n" +
-                         $"│  ── FreeForm: {createdFreeForm}개\n";
+            string logPath = WriteFailureLog(created, createdStandard, createdFreeForm, failed,
+                diameterStats, failureDetails, errors, debugLog, sheetSettings, sheetStats);
+            // CSV 파일은 검증용 — 다이얼로그엔 노출 안 함
+            WriteVerificationCsv(csvRows);
 
-            foreach (var kv in diameterStats.OrderBy(k => k.Key))
-                msg += $"│  ── D{kv.Key}: {kv.Value}개\n";
+            // ── 사용자 다이얼로그: 핵심 결과만 ──
+            string msg = $"종방향 철근 배치 완료\n\n" +
+                         $"  배치: {created}개  /  실패: {failed}개";
+
+            if (diameterStats.Count > 0)
+            {
+                msg += "\n\n  직경별";
+                foreach (var kv in diameterStats.OrderBy(k => k.Key))
+                    msg += $"\n    D{kv.Key}: {kv.Value}개";
+            }
 
             if (sheetStats.Count > 0)
             {
-                msg += "\n── 구조도별\n";
+                msg += "\n\n  구조도별";
                 foreach (var kv in sheetStats.OrderBy(k => k.Key))
-                    msg += $"│  ── {kv.Key}: {kv.Value}개\n";
+                    msg += $"\n    {kv.Key}: {kv.Value}개";
             }
 
-            if (_verboseDebug && debugLog.Count > 0)
-                msg += "\n═══ 디버그 ═══\n" + string.Join("\n", debugLog);
-
             if (errors.Count > 0)
-                msg += "\n\n오류:\n" + string.Join("\n", errors.Take(20));
+            {
+                msg += "\n\n일부 누락:";
+                foreach (var err in errors.Take(8))
+                    msg += $"\n  · {err}";
+                if (errors.Count > 8)
+                    msg += $"\n  · ... 외 {errors.Count - 8}건";
+            }
 
-            string logPath = WriteFailureLog(created, createdStandard, createdFreeForm, failed,
-                diameterStats, failureDetails, errors, debugLog, sheetSettings, sheetStats);
             if (!string.IsNullOrEmpty(logPath))
-                msg += $"\n\n로그: {logPath}";
-
-            // CSV 파일 저장 (벡터/CTC 검증용)
-            string csvPath = WriteVerificationCsv(csvRows);
-            if (!string.IsNullOrEmpty(csvPath))
-                msg += $"\nCSV: {csvPath}";
+                msg += $"\n\n자세한 로그: {logPath}";
 
             TaskDialog.Show("종방향 철근 배치", msg);
             return Result.Succeeded;
