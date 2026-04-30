@@ -192,6 +192,10 @@ namespace RevitRebarModeler.Commands
                     double depthMm = ParseDepthFromHost(hostElement);
                     if (depthMm <= 0) depthMm = 1000;
 
+                    // 90도 + 100mm 후크 타입 확보 (없으면 생성). barType별 1회.
+                    var hookType = EnsureHookType90(doc, GetBarDiameterFt(barType), 100.0);
+                    debugLog.Add($"  {structureKey}: hookType={hookType?.Name ?? "<null>"}");
+
                     // 종방향 단별 outer/inner 페어링
                     var byDan = longiRefs.GroupBy(x => x.Dan)
                         .OrderBy(g => g.Key)
@@ -307,26 +311,17 @@ namespace RevitRebarModeler.Commands
                             XYZ pSI = new XYZ(inXY.X - ndx * extInner, zStartFt - topExtFt, inXY.Z - ndz * extInner - inOffsetZ);
                             XYZ pEI = new XYZ(inXY.X - ndx * extInner, zEndFt   + topExtFt, inXY.Z - ndz * extInner - inOffsetZ);
 
-                            // 후크 길이: 100mm 강제 고정
-                            double hookFt = 100.0 * MmToFt;
-
-                            // 후크 끝점: 서로 마주보는 방향으로 100mm 연장
-                            XYZ hookSI = ComputeHookEndpoint(pSI, pEI, hookFt);
-                            XYZ hookEI = ComputeHookEndpoint(pEI, pSI, hookFt);
-
+                            // ★ Shape-based: 3선 U자 (pSI → pSO → pEO → pEI). 후크는 RebarHookType이 자동 생성.
                             var curves = new List<Curve>();
-                            TryAddLine(curves, pSO, pEO); // (1) 상단 가로 (외→외)
-                            TryAddLine(curves, pSO, pSI); // (2) 시작 레그 (외→내)
-                            TryAddLine(curves, pEO, pEI); // (3) 끝 레그   (외→내)
-                            TryAddLine(curves, pSI, hookSI); // (4) 시작 후크 (내향)
-                            TryAddLine(curves, pEI, hookEI); // (5) 끝 후크 (내향)
+                            TryAddLine(curves, pSI, pSO); // (1) 시작 레그 (내→외)
+                            TryAddLine(curves, pSO, pEO); // (2) 상단 가로 (시작→끝)
+                            TryAddLine(curves, pEO, pEI); // (3) 끝 레그 (외→내)
 
                             if (curves.Count < 3) { failed++; continue; }
 
                             string mark = $"{structureKey}_shear_종{dan}_횡{sDan}-{eDan}_{(isGroupA ? "A" : "B")}";
 
-                            // RebarHookType 끄기 (null 전달) - 커브만으로 5선 생성
-                            bool ok = TryCreateShearRebar(doc, curves, barType, null,
+                            bool ok = TryCreateShearRebar(doc, curves, barType, hookType,
                                 hostElement, mark, out string createMethod, out string err);
                             if (ok) { created++; sheetCreated++; createdStandard++; }
                             else
@@ -720,26 +715,39 @@ namespace RevitRebarModeler.Commands
             return true;
         }
 
-        /// <summary>90도 RebarHookType 탐색. 없으면 null.</summary>
-        private RebarHookType FindHookType(Document doc)
+        /// <summary>
+        /// 90도 + 지정 길이(기본 100mm) RebarHookType 확보. 없으면 생성.
+        /// tangentLengthMultiplier = targetLengthFt / barDiameterFt (Revit RebarHookType은 절대 길이가
+        /// 아니라 bar 직경 배수로 길이를 정의하기 때문). 따라서 다른 bar 직경에는 다른 hook type 필요.
+        /// </summary>
+        private RebarHookType EnsureHookType90(Document doc, double barDiameterFt, double targetTangentLengthMm = 100.0)
         {
+            double targetTangentFt = targetTangentLengthMm * MmToFt;
+            double multiplier = (barDiameterFt > 1e-9) ? targetTangentFt / barDiameterFt : 7.6923;
+            string targetName = $"Hook_90_{targetTangentLengthMm:F0}mm_D{Math.Round(barDiameterFt / MmToFt)}";
+
             var all = new FilteredElementCollector(doc)
                 .OfClass(typeof(RebarHookType))
                 .Cast<RebarHookType>()
                 .ToList();
-            if (all.Count == 0) return null;
 
-            // 90도 후크 우선
-            var hook90 = all.FirstOrDefault(h =>
-                h.Name.Contains("90") ||
-                Math.Abs(h.HookAngle - Math.PI / 2.0) < 0.01);
-            if (hook90 != null) return hook90;
+            // 1) 이름으로 정확 매칭
+            var byName = all.FirstOrDefault(h => h.Name == targetName);
+            if (byName != null) return byName;
 
-            // 그다음 스탠다드 후크 무엇이든
-            return all.FirstOrDefault(h =>
-                h.Name.Contains("스탠다드") ||
-                h.Name.Contains("Standard") ||
-                h.Name.Contains("Std")) ?? all[0];
+            // 2) 신규 생성
+            try
+            {
+                var created = RebarHookType.Create(doc, Math.PI / 2.0, multiplier);
+                try { created.Name = targetName; } catch { }
+                return created;
+            }
+            catch
+            {
+                // 생성 실패 시 기존 90도 hook 중 하나 fallback
+                return all.FirstOrDefault(h => Math.Abs(h.HookAngle - Math.PI / 2.0) < 0.01)
+                    ?? all.FirstOrDefault();
+            }
         }
 
         /// <summary>
@@ -931,16 +939,5 @@ namespace RevitRebarModeler.Commands
             }
         }
 
-        /// <summary>
-        /// 후크 끝점 계산: start에서 center 방향으로 length만큼 이동.
-        /// center 방향 벡터의 길이가 0이면 start 그대로 반환.
-        /// </summary>
-        private XYZ ComputeHookEndpoint(XYZ start, XYZ center, double lengthFt)
-        {
-            XYZ dir = center - start;
-            double len = dir.GetLength();
-            if (len < 1e-9 || lengthFt <= 0) return start;
-            return start + dir.Normalize() * lengthFt;
-        }
     }
 }

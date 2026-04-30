@@ -67,13 +67,20 @@ namespace RevitRebarModeler.Commands
                     return Result.Failed;
                 }
 
-                // 기존 벡터검증 DirectShape 정리 (Mark에 "_벡터검증_" 포함)
+                // 기존 검증용 DirectShape 정리 (Mark에 "_벡터검증_" / "중심선_" / "JSON중심선_" / "실제중심선_" 포함)
                 try
                 {
                     var staleIds = new FilteredElementCollector(doc)
                         .OfClass(typeof(DirectShape))
-                        .Where(e => (e.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() ?? "")
-                                    .Contains("_벡터검증_"))
+                        .Where(e =>
+                        {
+                            var c = e.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() ?? "";
+                            return c.Contains("_벡터검증_")
+                                || c.Contains("구조도중심선_")
+                                || c.Contains("JSON중심선_")
+                                || c.Contains("실제중심선_")
+                                || c.Contains("DirectShape중앙선_");
+                        })
                         .Select(e => e.Id)
                         .ToList();
                     if (staleIds.Count > 0) doc.Delete(staleIds);
@@ -271,12 +278,13 @@ namespace RevitRebarModeler.Commands
                             anchorSrc = $"centerline ({clHit.X:F0},{clHit.Y:F0})";
                         }
 
-                        // 구조도 중심선을 노란색 DirectShape로 표시 (배치 결과 검증용)
+                        // JSON 중심선을 파란색 DirectShape로 표시
                         try
                         {
                             CreateCenterlineDirectShape(doc, structureKey, clSx, clSy, clEx, clEy);
                         }
                         catch { }
+
                     }
                     var samples = LongiCurveSampler.SampleFromAnchorWithChordNormal(
                         offsetSegs, setting.CtcMm, setting.Count, anchorArcLen);
@@ -841,8 +849,7 @@ namespace RevitRebarModeler.Commands
         }
 
         /// <summary>
-        /// 구조도 중심선(Cycle1Centerline)을 노란색 DirectShape로 활성 뷰에 표시.
-        /// 배치 결과와 anchor 위치 검증용.
+        /// JSON Cycle1Centerline (직선 2점)을 파란색 DirectShape로 표시.
         /// </summary>
         private void CreateCenterlineDirectShape(Document doc, string structureKey,
             double sx, double sy, double ex, double ey)
@@ -854,7 +861,7 @@ namespace RevitRebarModeler.Commands
             var line = Line.CreateBound(p1, p2);
             var ds = DirectShape.CreateElement(doc, new ElementId(BuiltInCategory.OST_GenericModel));
             ds.ApplicationId = "RevitRebarModeler";
-            string mark = $"구조도중심선_{structureKey}";
+            string mark = $"JSON중심선_{structureKey}";
             ds.ApplicationDataId = mark;
             try { ds.Name = mark; } catch { }
             ds.SetShape(new List<GeometryObject> { line });
@@ -866,9 +873,65 @@ namespace RevitRebarModeler.Commands
                 try
                 {
                     var ogs = new OverrideGraphicSettings();
-                    var yellow = new Color(250, 204, 21);
-                    ogs.SetProjectionLineColor(yellow);
-                    ogs.SetCutLineColor(yellow);
+                    var blue = new Color(50, 130, 255);
+                    ogs.SetProjectionLineColor(blue);
+                    ogs.SetCutLineColor(blue);
+                    activeView.SetElementOverrides(ds.Id, ogs);
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>
+        /// offsetSegs(DirectShape)의 호장(arc-length) 중앙을 통과하는 JSON 중심선과 평행한
+        /// 직선을 빨간색 DirectShape로 표시. JSON 중심선(파란)과 비교하면 anchor 어긋남이
+        /// 시각적으로 보임.
+        /// </summary>
+        private void CreateOffsetMidpointLineDirectShape(Document doc, string structureKey,
+            List<RebarSegment> offsetSegs,
+            double jsonSx, double jsonSy, double jsonEx, double jsonEy)
+        {
+            if (offsetSegs == null || offsetSegs.Count == 0) return;
+
+            double totalLen = LongiCurveSampler.TotalLength(offsetSegs);
+            if (totalLen <= 0) return;
+
+            // offsetSegs 호장 중앙점
+            if (!LongiCurveSampler.SamplePointAt(offsetSegs, totalLen / 2.0, out var midPt))
+                return;
+            if (midPt == null) return;
+
+            // JSON 중심선의 중간점
+            double jMidX = (jsonSx + jsonEx) / 2.0;
+            double jMidY = (jsonSy + jsonEy) / 2.0;
+
+            // 평행 이동 벡터 = midPt - JSON 중간점
+            double tx = midPt.X - jMidX;
+            double ty = midPt.Y - jMidY;
+
+            // JSON 직선의 두 끝점을 평행 이동
+            var p1 = Civil3DCoordinate.ToRevitWorld(jsonSx + tx, jsonSy + ty, 0);
+            var p2 = Civil3DCoordinate.ToRevitWorld(jsonEx + tx, jsonEy + ty, 0);
+            if (p1.DistanceTo(p2) < 0.001) return;
+
+            var line = Line.CreateBound(p1, p2);
+            var ds = DirectShape.CreateElement(doc, new ElementId(BuiltInCategory.OST_GenericModel));
+            ds.ApplicationId = "RevitRebarModeler";
+            string mark = $"DirectShape중앙선_{structureKey}";
+            ds.ApplicationDataId = mark;
+            try { ds.Name = mark; } catch { }
+            ds.SetShape(new List<GeometryObject> { line });
+            ds.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.Set(mark);
+
+            var activeView = doc.ActiveView;
+            if (activeView != null)
+            {
+                try
+                {
+                    var ogs = new OverrideGraphicSettings();
+                    var red = new Color(255, 60, 60);
+                    ogs.SetProjectionLineColor(red);
+                    ogs.SetCutLineColor(red);
                     activeView.SetElementOverrides(ds.Id, ogs);
                 }
                 catch { }
