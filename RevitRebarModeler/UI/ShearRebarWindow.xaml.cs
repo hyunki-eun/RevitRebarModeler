@@ -9,10 +9,6 @@ using System.Windows.Media;
 
 using Autodesk.Revit.DB;
 
-using Microsoft.Win32;
-
-using Newtonsoft.Json;
-
 using RevitRebarModeler.Models;
 
 namespace RevitRebarModeler.UI
@@ -59,7 +55,9 @@ namespace RevitRebarModeler.UI
             if (SessionCache.LoadedJson != null)
             {
                 LoadedData = SessionCache.LoadedJson;
-                TxtJsonPath.Text = SessionCache.LoadedJsonPath ?? "(세션 메모리)";
+                TxtJsonPath.Text = "JSON: " + (string.IsNullOrEmpty(SessionCache.LoadedJsonPath)
+                    ? "(세션 메모리)"
+                    : System.IO.Path.GetFileName(SessionCache.LoadedJsonPath));
 
                 bool hasLongi = SessionCache.LongitudinalSettings != null && SessionCache.LongitudinalSettings.Count > 0;
                 if (hasLongi)
@@ -78,43 +76,8 @@ namespace RevitRebarModeler.UI
             }
             else
             {
-                TxtSessionInfo.Text = "세션 메모리에 JSON이 없습니다. [JSON 다시 선택]으로 파일을 불러오세요.";
+                TxtSessionInfo.Text = "세션 메모리에 JSON이 없습니다. 리본의 [Civil3D JSON 불러오기]를 먼저 실행하세요.";
                 TxtSessionInfo.Foreground = System.Windows.Media.Brushes.IndianRed;
-            }
-        }
-
-        private void BtnBrowse_Click(object sender, RoutedEventArgs e)
-        {
-            var dlg = new OpenFileDialog
-            {
-                Filter = "JSON 파일 (*.json)|*.json",
-                Title = "Civil3D 내보내기 JSON 선택"
-            };
-            if (dlg.ShowDialog() != true) return;
-
-            try
-            {
-                string json = System.IO.File.ReadAllText(dlg.FileName, System.Text.Encoding.UTF8);
-                LoadedData = JsonConvert.DeserializeObject<CivilExportData>(json);
-
-                if (LoadedData?.TransverseRebars == null || LoadedData.TransverseRebars.Count == 0)
-                {
-                    MessageBox.Show("TransverseRebars 데이터가 없습니다.", "오류");
-                    return;
-                }
-
-                // 세션 캐시 갱신
-                SessionCache.LoadedJson = LoadedData;
-                SessionCache.LoadedJsonPath = dlg.FileName;
-                TxtJsonPath.Text = System.IO.Path.GetFileName(dlg.FileName);
-                TxtSessionInfo.Text = "JSON을 다시 로드하여 세션 메모리에 갱신했습니다.";
-
-                BuildSheetTable();
-                BtnPlace.IsEnabled = _items.Count > 0;
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"JSON 파싱 오류:\n{ex.Message}", "오류");
             }
         }
 

@@ -25,6 +25,13 @@ namespace RevitRebarModeler.Commands
         {
             var doc = commandData.Application.ActiveUIDocument.Document;
 
+            if (SessionCache.LoadedJson == null)
+            {
+                TaskDialog.Show("Civil3D JSON 필요",
+                    "먼저 리본의 [Civil3D JSON 불러오기]를 실행하세요.");
+                return Result.Cancelled;
+            }
+
             var window = new UI.TransverseRebarWindow(doc);
             if (window.ShowDialog() != true)
                 return Result.Cancelled;
@@ -74,9 +81,6 @@ namespace RevitRebarModeler.Commands
                     TaskDialog.Show("오류", "RebarBarType이 없습니다.\n구조 템플릿에서 실행해주세요.");
                     return Result.Failed;
                 }
-
-                // 시작/끝 후크 없음 (null 전달)
-                RebarHookType hookType = null;
 
                 foreach (var sheetGroup in rebarsBySheet)
                 {

@@ -21,6 +21,13 @@ namespace RevitRebarModeler.Commands
             var app = uiApp.Application;
             var doc = uiApp.ActiveUIDocument.Document;
 
+            if (SessionCache.LoadedJson == null)
+            {
+                TaskDialog.Show("Civil3D JSON 필요",
+                    "먼저 리본의 [Civil3D JSON 불러오기]를 실행하세요.");
+                return Result.Cancelled;
+            }
+
             var window = new UI.CreateStructureWindow();
             if (window.ShowDialog() != true)
                 return Result.Cancelled;
@@ -68,17 +75,34 @@ namespace RevitRebarModeler.Commands
                         }
 
                         FamilySymbol symbol = result.Item1;
-                        XYZ placementPoint = result.Item2;
+                        XYZ placementPoint = result.Item2;  // (0,0,0) — 패밀리 내부가 절대좌표
 
-                        // Level 인자 없는 overload — 절대좌표 그대로 배치 (Level 고도 오프셋 없음)
+                        // Structural Framing 카테고리 + Level 없는 overload.
+                        // placementPoint=(0,0,0)이라 워크플레인 잠금 영향 없음.
                         FamilyInstance instance = doc.Create.NewFamilyInstance(
                             placementPoint, symbol, StructuralType.NonStructural);
 
                         instance.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)
                             ?.Set($"{cycle.CycleKey}|depth={depthMm}");
 
-                        // 배치 검증용 로그: 예상 vs 실제 LocationPoint
+                        // Structural Framing 카테고리에서는 NewFamilyInstance 점 좌표가 무시되고
+                        // (0,0,0)에 배치되는 케이스가 있어, 실제 위치를 보고 명시적으로 이동시킨다.
                         XYZ actual = (instance.Location as LocationPoint)?.Point ?? XYZ.Zero;
+                        XYZ moveDelta = placementPoint - actual;
+                        if (moveDelta.GetLength() > 1e-6)
+                        {
+                            try
+                            {
+                                ElementTransformUtils.MoveElement(doc, instance.Id, moveDelta);
+                                actual = (instance.Location as LocationPoint)?.Point ?? placementPoint;
+                            }
+                            catch (Exception mvEx)
+                            {
+                                fullLog.Add($"  [WARN] {cycle.CycleKey}: MoveElement 실패 - {mvEx.Message}");
+                            }
+                        }
+
+                        // 배치 검증용 로그: 예상 vs 실제 LocationPoint
                         double dx = actual.X - placementPoint.X;
                         double dy = actual.Y - placementPoint.Y;
                         double dz = actual.Z - placementPoint.Z;

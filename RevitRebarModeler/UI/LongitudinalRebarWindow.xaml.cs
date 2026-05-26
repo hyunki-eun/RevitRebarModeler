@@ -9,10 +9,6 @@ using System.Windows.Media;
 
 using Autodesk.Revit.DB;
 
-using Microsoft.Win32;
-
-using Newtonsoft.Json;
-
 using RevitRebarModeler.Models;
 
 namespace RevitRebarModeler.UI
@@ -46,43 +42,31 @@ namespace RevitRebarModeler.UI
             InitializeComponent();
             DataContext = this;
             LstSheets.ItemsSource = _items;
+
+            LoadFromSession();
         }
 
-        private void BtnBrowse_Click(object sender, RoutedEventArgs e)
+        private void LoadFromSession()
         {
-            var dlg = new OpenFileDialog
+            LoadedData = SessionCache.LoadedJson;
+            TxtJsonPath.Text = "JSON: " + (string.IsNullOrEmpty(SessionCache.LoadedJsonPath)
+                ? "(세션 메모리)"
+                : System.IO.Path.GetFileName(SessionCache.LoadedJsonPath));
+
+            if (LoadedData?.TransverseRebars == null || LoadedData.TransverseRebars.Count == 0)
             {
-                Filter = "JSON 파일 (*.json)|*.json",
-                Title = "Civil3D 내보내기 JSON 선택"
-            };
-
-            if (dlg.ShowDialog() != true) return;
-            TxtJsonPath.Text = System.IO.Path.GetFileName(dlg.FileName);
-
-            try
-            {
-                string json = System.IO.File.ReadAllText(dlg.FileName, System.Text.Encoding.UTF8);
-                LoadedData = JsonConvert.DeserializeObject<CivilExportData>(json);
-
-                if (LoadedData?.TransverseRebars == null || LoadedData.TransverseRebars.Count == 0)
-                {
-                    MessageBox.Show("TransverseRebars 데이터가 없습니다.", "오류");
-                    return;
-                }
-
-                BuildSheetTable();
-                BtnPlace.IsEnabled = _items.Count > 0;
-
-                int sheets = _items.Count;
-                int totalInner = _items.Sum(s => s.InnerPolylineCount);
-                int totalOuter = _items.Sum(s => s.OuterPolylineCount);
-                TxtInfo.Text = $"프로젝트: {LoadedData.ProjectName}\n" +
-                               $"구조도: {sheets}개 | 내측 곡선: {totalInner}개 | 외측 곡선: {totalOuter}개";
+                TxtInfo.Text = "JSON에 TransverseRebars 데이터가 없습니다.";
+                return;
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"JSON 파싱 오류:\n{ex.Message}", "오류");
-            }
+
+            BuildSheetTable();
+            BtnPlace.IsEnabled = _items.Count > 0;
+
+            int sheets = _items.Count;
+            int totalInner = _items.Sum(s => s.InnerPolylineCount);
+            int totalOuter = _items.Sum(s => s.OuterPolylineCount);
+            TxtInfo.Text = $"프로젝트: {LoadedData.ProjectName}\n" +
+                           $"구조도: {sheets}개 | 내측 곡선: {totalInner}개 | 외측 곡선: {totalOuter}개";
         }
 
         private void BuildSheetTable()
@@ -407,7 +391,7 @@ namespace RevitRebarModeler.UI
             }
 
             // 세션 캐시에 저장 — 전단철근 등 후속 명령에서 단(段) 위치 산출 시 동일 설정 사용
-            SessionCache.LoadedJson = LoadedData;
+            // LoadedJson 자체는 LoadJsonCommand가 단독 관리하므로 여기서는 건드리지 않음
             SessionCache.LongitudinalSettings = SheetSettings;
 
             DialogResult = true;

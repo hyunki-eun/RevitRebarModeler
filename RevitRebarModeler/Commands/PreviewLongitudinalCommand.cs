@@ -24,6 +24,13 @@ namespace RevitRebarModeler.Commands
         {
             var doc = commandData.Application.ActiveUIDocument.Document;
 
+            if (SessionCache.LoadedJson == null)
+            {
+                TaskDialog.Show("Civil3D JSON 필요",
+                    "먼저 리본의 [Civil3D JSON 불러오기]를 실행하세요.");
+                return Result.Cancelled;
+            }
+
             var window = new UI.LongitudinalRebarWindow(doc);
             if (window.ShowDialog() != true)
                 return Result.Cancelled;

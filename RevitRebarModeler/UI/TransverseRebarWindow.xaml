@@ -102,23 +102,15 @@
             <TextBlock Text="JSON의 TransverseRebars를 구조도별 Host에 자동 매칭하여 배치합니다." FontSize="12" Foreground="#64748B" Margin="0,4,0,0"/>
         </StackPanel>
 
-        <!-- Step 1: JSON 파일 선택 -->
-        <Border Grid.Row="1" Background="White" CornerRadius="6" Padding="14" Margin="0,0,0,8"
-                BorderBrush="#E2E8F0" BorderThickness="1">
-            <StackPanel>
-                <TextBlock Text="Step 1. JSON 파일 선택" FontSize="14" FontWeight="SemiBold" Foreground="#1E293B" Margin="0,0,0,8"/>
-                <DockPanel>
-                    <Button DockPanel.Dock="Right" Content="찾아보기" Style="{StaticResource SecBtn}" Width="80" Margin="8,0,0,0" Click="BtnBrowse_Click"/>
-                    <TextBox x:Name="TxtJsonPath" IsReadOnly="True" VerticalContentAlignment="Center" Height="28"/>
-                </DockPanel>
-            </StackPanel>
-        </Border>
+        <!-- 세션 JSON 경로 표시 (작게) -->
+        <TextBlock Grid.Row="1" x:Name="TxtJsonPath" Margin="0,0,0,8"
+                   FontSize="11" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
 
-        <!-- Step 2: 구조도별 CTC 및 철근 선택 (통합) -->
+        <!-- 구조도별 CTC 및 철근 선택 (통합) -->
         <Border Grid.Row="2" Background="White" CornerRadius="6" Padding="14" Margin="0,0,0,8"
                 BorderBrush="#E2E8F0" BorderThickness="1">
             <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="Step 2. 구조도별 CTC 및 배치 철근 선택" FontSize="14" FontWeight="SemiBold" Foreground="#1E293B" Margin="0,0,0,8"/>
+                <TextBlock DockPanel.Dock="Top" Text="구조도별 CTC 및 배치 철근 선택" FontSize="14" FontWeight="SemiBold" Foreground="#1E293B" Margin="0,0,0,8"/>
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
                     <Button Content="전체 선택" Style="{StaticResource SecBtn}" Click="BtnSelectAll_Click" Margin="0,0,4,0"/>
                     <Button Content="전체 해제" Style="{StaticResource SecBtn}" Click="BtnDeselectAll_Click" Margin="0,0,12,0"/>

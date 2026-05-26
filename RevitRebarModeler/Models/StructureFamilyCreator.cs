@@ -44,30 +44,13 @@ namespace RevitRebarModeler.Models
             ArcCreationFailed = false;
 
             // ── 1. 패밀리 원점 결정 ──
-            // BoundaryCenterX/Y가 있으면 사이클 바운더리 중심 사용 (구조물+철근 공통 기준)
-            // 없으면 기존 방식 (구조물 바운딩 박스 중심) 폴백
-            double originXMm, originYMm;
-
-            if (cycle.BoundaryCenterX != 0 || cycle.BoundaryCenterY != 0)
-            {
-                originXMm = cycle.BoundaryCenterX;
-                originYMm = cycle.BoundaryCenterY;
-                Errors.Add($"[INFO] 원점: BoundaryCenter ({originXMm:F0}, {originYMm:F0}) mm");
-            }
-            else
-            {
-                double minX = double.MaxValue, maxX = double.MinValue;
-                double minY = double.MaxValue, maxY = double.MinValue;
-                foreach (var region in cycle.Regions)
-                    foreach (var v in region.Vertices)
-                    {
-                        minX = Math.Min(minX, v.X); maxX = Math.Max(maxX, v.X);
-                        minY = Math.Min(minY, v.Y); maxY = Math.Max(maxY, v.Y);
-                    }
-                originXMm = (minX + maxX) / 2.0;
-                originYMm = (minY + maxY) / 2.0;
-                Errors.Add($"[INFO] 원점: BBox 폴백 ({originXMm:F0}, {originYMm:F0}) mm");
-            }
+            // 모든 사이클이 동일한 GlobalOrigin을 사용해 패밀리 내부 정점을 절대좌표로 그린다.
+            // 이렇게 하면 NewFamilyInstance를 (0,0,0)에 배치해도 패밀리 내부에 절대 위치 정보가
+            // 살아 있어 사이클별로 다른 X 위치에 시각화된다. NewFamilyInstance의 워크플레인 잠금
+            // (Structural Framing 카테고리에서 X 방향 위치 변경이 거부되는 동작) 영향을 받지 않는다.
+            double originXMm = Civil3DCoordinate.GlobalOriginXMm;
+            double originYMm = Civil3DCoordinate.GlobalOriginYMm;
+            Errors.Add($"[INFO] 원점: GlobalOrigin ({originXMm:F0}, {originYMm:F0}) mm — 절대좌표 모드");
             double depthFt = GeometryConverter.MmToFt(depthMm);
 
             // ── 2. 패밀리 문서 생성 ──
@@ -83,7 +66,9 @@ namespace RevitRebarModeler.Models
             {
                 t.Start();
 
-                // 카테고리를 구조 프레임으로 변경
+                // 카테고리를 Structural Framing으로 변경 — Rebar가 valid host로 인식하기 위해 필요.
+                // 패밀리 내부 정점이 절대좌표(GlobalOrigin 기준)로 그려지므로
+                // NewFamilyInstance의 X 방향 워크플레인 잠금 영향을 받지 않는다.
                 try
                 {
                     Category cat = famDoc.Settings.Categories
@@ -187,8 +172,10 @@ namespace RevitRebarModeler.Models
             if (!symbol.IsActive) symbol.Activate();
 
             // ── 5. 배치 좌표 반환 ──
-            // 세션 GlobalOrigin 기준 DWG 절대좌표로 배치 (구조물-철근 공통 원점)
-            XYZ placementPoint = Civil3DCoordinate.FamilyPlacementPoint(originXMm, originYMm);
+            // 패밀리 내부 정점이 GlobalOrigin 기준 절대좌표로 그려졌으므로
+            // 인스턴스는 (0,0,0)에 배치한다. Structural Framing 카테고리의 워크플레인
+            // 잠금이 (0,0,0) 위치에는 영향을 주지 않는다.
+            XYZ placementPoint = XYZ.Zero;
 
             return Tuple.Create(symbol, placementPoint);
         }
@@ -527,7 +514,8 @@ namespace RevitRebarModeler.Models
                 return lower.Contains("가변") || lower.Contains("adaptive") || lower.Contains("conceptual");
             }
 
-            // 1순위: 구조 프레이밍 템플릿
+            // 1순위: 구조 프레이밍 템플릿 — Rebar host로 사용 가능.
+            // 패밀리 내부 정점을 절대좌표로 그리므로 X 방향 워크플레인 잠금 문제는 회피됨.
             foreach (var f in rftFiles)
             {
                 string name = Path.GetFileNameWithoutExtension(f).ToLower();
@@ -538,7 +526,7 @@ namespace RevitRebarModeler.Models
                     return f;
             }
 
-            // 2순위: 일반 모델 (가변 제외)
+            // 2순위: 일반 모델 (가변 제외) — Rebar host가 아니라 철근 배치 안 됨. 폴백 전용.
             foreach (var f in rftFiles)
             {
                 string name = Path.GetFileNameWithoutExtension(f).ToLower();

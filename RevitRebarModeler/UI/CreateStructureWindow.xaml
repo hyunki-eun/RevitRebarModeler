@@ -112,24 +112,15 @@
             <TextBlock Text="추출된 JSON 데이터를 기반으로 3D 솔리드를 생성합니다." FontSize="12" Foreground="#64748B" Margin="0,4,0,0"/>
         </StackPanel>
 
-        <!-- Step 1: JSON 파일 선택 -->
-        <Border Grid.Row="1" Background="White" CornerRadius="6" Padding="14" Margin="0,0,0,8"
-                BorderBrush="#E2E8F0" BorderThickness="1">
-            <StackPanel>
-                <TextBlock Text="Step 1. JSON 파일 선택" FontSize="14" FontWeight="SemiBold"
-                           Foreground="#1E293B" Margin="0,0,0,8"/>
-                <DockPanel>
-                    <Button DockPanel.Dock="Right" Content="찾아보기" Style="{StaticResource SecBtn}" Width="80" Margin="8,0,0,0" Click="BtnBrowse_Click"/>
-                    <TextBox x:Name="TxtJsonPath" IsReadOnly="True" VerticalContentAlignment="Center" Height="28"/>
-                </DockPanel>
-            </StackPanel>
-        </Border>
+        <!-- 세션 JSON 경로 표시 (작게) -->
+        <TextBlock Grid.Row="1" x:Name="TxtJsonPath" Margin="0,0,0,8"
+                   FontSize="11" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
 
-        <!-- Step 2: 돌출 설정 -->
+        <!-- 돌출 설정 -->
         <Border Grid.Row="2" Background="White" CornerRadius="6" Padding="14" Margin="0,0,0,8"
                 BorderBrush="#E2E8F0" BorderThickness="1">
             <StackPanel>
-                <TextBlock Text="Step 2. 구조물 두께 설정" FontSize="14" FontWeight="SemiBold"
+                <TextBlock Text="구조물 두께 설정" FontSize="14" FontWeight="SemiBold"
                            Foreground="#1E293B" Margin="0,0,0,8"/>
                 <TextBlock Text="생성될 3D 솔리드의 두께(돌출 깊이)를 설정합니다." FontSize="11" Foreground="#64748B" Margin="0,0,0,8"/>
                 <StackPanel Orientation="Horizontal">
@@ -139,11 +130,11 @@
             </StackPanel>
         </Border>
 
-        <!-- Step 3: 영역 선택 리스트 -->
+        <!-- 영역 선택 리스트 -->
         <Border Grid.Row="3" Background="White" CornerRadius="6" Padding="14" Margin="0,0,0,8"
                 BorderBrush="#E2E8F0" BorderThickness="1">
             <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="Step 3. 생성 영역 선택" FontSize="14" FontWeight="SemiBold"
+                <TextBlock DockPanel.Dock="Top" Text="생성 영역 선택" FontSize="14" FontWeight="SemiBold"
                            Foreground="#1E293B" Margin="0,0,0,8"/>
                 
                 <!-- 상단 버튼 -->

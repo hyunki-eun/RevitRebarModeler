@@ -25,6 +25,7 @@
   <!-- NuGet 패키지 -->
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="ClosedXML" Version="0.102.3" />
   </ItemGroup>
 
   <!-- Revit API 참조 -->

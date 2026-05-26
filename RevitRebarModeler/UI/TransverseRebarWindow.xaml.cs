@@ -8,10 +8,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 
-using Microsoft.Win32;
-
-using Newtonsoft.Json;
-
 using RevitRebarModeler.Models;
 
 namespace RevitRebarModeler.UI
@@ -37,96 +33,82 @@ namespace RevitRebarModeler.UI
             view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(RebarItem.SheetKey)));
             view.SortDescriptions.Clear();
             view.SortDescriptions.Add(new SortDescription(nameof(RebarItem.SheetKey), ListSortDirection.Ascending));
+
+            LoadFromSession();
         }
 
-        private void BtnBrowse_Click(object sender, RoutedEventArgs e)
+        private void LoadFromSession()
         {
-            var dlg = new OpenFileDialog
+            LoadedData = SessionCache.LoadedJson;
+            TxtJsonPath.Text = "JSON: " + (string.IsNullOrEmpty(SessionCache.LoadedJsonPath)
+                ? "(세션 메모리)"
+                : System.IO.Path.GetFileName(SessionCache.LoadedJsonPath));
+
+            if (LoadedData?.TransverseRebars == null || LoadedData.TransverseRebars.Count == 0)
             {
-                Filter = "JSON 파일 (*.json)|*.json",
-                Title = "Civil3D 내보내기 JSON 선택"
-            };
-
-            if (dlg.ShowDialog() != true) return;
-            TxtJsonPath.Text = dlg.FileName;
-
-            try
-            {
-                string json = System.IO.File.ReadAllText(dlg.FileName, System.Text.Encoding.UTF8);
-                LoadedData = JsonConvert.DeserializeObject<CivilExportData>(json);
-
-                if (LoadedData?.TransverseRebars == null || LoadedData.TransverseRebars.Count == 0)
-                {
-                    MessageBox.Show("TransverseRebars 데이터가 없습니다.", "오류");
-                    return;
-                }
-
-                // 구조도별 CTC 기본값 준비
-                var ctcLookup = new Dictionary<string, double>();
-                if (LoadedData.StructureRegions != null)
-                {
-                    var keyRegex = new Regex(@"구조도\((\d+)\)");
-                    foreach (var sr in LoadedData.StructureRegions)
-                    {
-                        var m = keyRegex.Match(sr.CycleKey ?? "");
-                        if (!m.Success) continue;
-                        string sheetKey = $"구조도({m.Groups[1].Value})";
-                        double ctc = sr.Cycle1CtcMm > 0 ? sr.Cycle1CtcMm : sr.Cycle2CtcMm;
-                        if (ctc > 0) ctcLookup[sheetKey] = ctc;
-                    }
-                }
-
-                // 구조도별 공유 상태(SheetSharedState) 생성
-                _sheetStates.Clear();
-                var groupedBySheet = LoadedData.TransverseRebars
-                    .GroupBy(r => ExtractStructureKey(r.SheetId))
-                    .Where(g => !string.IsNullOrEmpty(g.Key));
-                foreach (var g in groupedBySheet)
-                {
-                    double defaultCtc = ctcLookup.TryGetValue(g.Key, out double c) ? c : 200;
-                    _sheetStates[g.Key] = new SheetSharedState
-                    {
-                        SheetKey = g.Key,
-                        CtcMm = defaultCtc,
-                        Cycle1Count = g.Count(r => r.CycleNumber == 1),
-                        Cycle2Count = g.Count(r => r.CycleNumber == 2),
-                        TotalCount = g.Count(),
-                        SelectedCount = g.Count() // 초기 전체 선택
-                    };
-                }
-
-                // 철근 아이템 구성 (공유 상태 참조)
-                _rebarItems.Clear();
-                foreach (var rebar in LoadedData.TransverseRebars)
-                {
-                    string sheetKey = ExtractStructureKey(rebar.SheetId);
-                    _sheetStates.TryGetValue(sheetKey, out var state);
-                    _rebarItems.Add(new RebarItem
-                    {
-                        IsChecked = true,
-                        Id = rebar.Id.ToString(),
-                        SheetKey = sheetKey,
-                        CycleNumber = rebar.CycleNumber,
-                        MatchedText = rebar.MatchedText ?? "",
-                        DiameterMm = rebar.DiameterMm,
-                        SegmentCount = rebar.Segments?.Count ?? 0,
-                        RebarData = rebar,
-                        SharedState = state
-                    });
-                }
-
-                UpdateSelectionInfo();
-                BtnPlace.IsEnabled = true;
-
-                int total = _rebarItems.Count;
-                int sheets = _sheetStates.Count;
-                TxtInfo.Text = $"프로젝트: {LoadedData.ProjectName}\n" +
-                               $"횡방향 철근: {total}개 | 구조도: {sheets}개 → Host 자동 매칭";
+                TxtInfo.Text = "JSON에 TransverseRebars 데이터가 없습니다.";
+                return;
             }
-            catch (Exception ex)
+
+            // 구조도별 CTC 기본값 준비
+            var ctcLookup = new Dictionary<string, double>();
+            if (LoadedData.StructureRegions != null)
             {
-                MessageBox.Show($"JSON 파싱 오류:\n{ex.Message}", "오류");
+                var keyRegex = new Regex(@"구조도\((\d+)\)");
+                foreach (var sr in LoadedData.StructureRegions)
+                {
+                    var m = keyRegex.Match(sr.CycleKey ?? "");
+                    if (!m.Success) continue;
+                    string sheetKey = $"구조도({m.Groups[1].Value})";
+                    double ctc = sr.Cycle1CtcMm > 0 ? sr.Cycle1CtcMm : sr.Cycle2CtcMm;
+                    if (ctc > 0) ctcLookup[sheetKey] = ctc;
+                }
             }
+
+            _sheetStates.Clear();
+            var groupedBySheet = LoadedData.TransverseRebars
+                .GroupBy(r => ExtractStructureKey(r.SheetId))
+                .Where(g => !string.IsNullOrEmpty(g.Key));
+            foreach (var g in groupedBySheet)
+            {
+                double defaultCtc = ctcLookup.TryGetValue(g.Key, out double c) ? c : 200;
+                _sheetStates[g.Key] = new SheetSharedState
+                {
+                    SheetKey = g.Key,
+                    CtcMm = defaultCtc,
+                    Cycle1Count = g.Count(r => r.CycleNumber == 1),
+                    Cycle2Count = g.Count(r => r.CycleNumber == 2),
+                    TotalCount = g.Count(),
+                    SelectedCount = g.Count()
+                };
+            }
+
+            _rebarItems.Clear();
+            foreach (var rebar in LoadedData.TransverseRebars)
+            {
+                string sheetKey = ExtractStructureKey(rebar.SheetId);
+                _sheetStates.TryGetValue(sheetKey, out var state);
+                _rebarItems.Add(new RebarItem
+                {
+                    IsChecked = true,
+                    Id = rebar.Id.ToString(),
+                    SheetKey = sheetKey,
+                    CycleNumber = rebar.CycleNumber,
+                    MatchedText = rebar.MatchedText ?? "",
+                    DiameterMm = rebar.DiameterMm,
+                    SegmentCount = rebar.Segments?.Count ?? 0,
+                    RebarData = rebar,
+                    SharedState = state
+                });
+            }
+
+            UpdateSelectionInfo();
+            BtnPlace.IsEnabled = true;
+
+            int total = _rebarItems.Count;
+            int sheets = _sheetStates.Count;
+            TxtInfo.Text = $"프로젝트: {LoadedData.ProjectName}\n" +
+                           $"횡방향 철근: {total}개 | 구조도: {sheets}개 → Host 자동 매칭";
         }
 
         private string ExtractStructureKey(string text)
@@ -153,7 +135,7 @@ namespace RevitRebarModeler.UI
             }
 
             // 세션 캐시에 저장 — 전단철근 등 후속 명령에서 횡방향 N단 Z 위치 산출 시 사용
-            SessionCache.LoadedJson = LoadedData;
+            // LoadedJson 자체는 LoadJsonCommand가 단독 관리하므로 여기서는 건드리지 않음
             SessionCache.TransverseCtcMap = SheetCtcMap;
 
             SelectedRebars = checkedItems.Select(r => r.RebarData).ToList();

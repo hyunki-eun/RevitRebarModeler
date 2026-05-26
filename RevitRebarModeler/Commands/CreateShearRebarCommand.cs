@@ -42,6 +42,13 @@ namespace RevitRebarModeler.Commands
         {
             var doc = commandData.Application.ActiveUIDocument.Document;
 
+            if (SessionCache.LoadedJson == null)
+            {
+                TaskDialog.Show("Civil3D JSON 필요",
+                    "먼저 리본의 [Civil3D JSON 불러오기]를 실행하세요.");
+                return Result.Cancelled;
+            }
+
             var window = new UI.ShearRebarWindow(doc);
             if (window.ShowDialog() != true)
                 return Result.Cancelled;
@@ -248,7 +255,6 @@ namespace RevitRebarModeler.Commands
                     debugLog.Add($"  묶음 목록(처음5): {string.Join(" ", bundles.Take(5).Select(b => $"[{b[0]}-{b[1]}]"))}");
 
                     int sheetCreated = 0;
-                    int sampleLogged = 0;
                     bool verifyDumpedForThisSheet = false;
                     // ── 종방향 홀수 단마다 × 횡방향 묶음 → 사각형 1개씩 ──
                     int oddIndex = 0; // 종방향 홀수 단 카운터 (0=1단, 1=3단, 2=5단...)

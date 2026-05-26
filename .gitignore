@@ -361,3 +361,6 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Inno Setup installer build artifacts (DLLs + setup .exe)
+installer/dist/RevitRebarModeler/
+installer/Output/

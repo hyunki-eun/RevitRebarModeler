@@ -7,10 +7,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 
-using Microsoft.Win32;
-
-using Newtonsoft.Json;
-
 using RevitRebarModeler.Models;
 
 namespace RevitRebarModeler.UI
@@ -35,85 +31,70 @@ namespace RevitRebarModeler.UI
             view.SortDescriptions.Clear();
             view.SortDescriptions.Add(new SortDescription(nameof(RegionItem.CycleKey), ListSortDirection.Ascending));
             view.SortDescriptions.Add(new SortDescription(nameof(RegionItem.RegionId), ListSortDirection.Ascending));
+
+            LoadFromSession();
         }
 
         // ============================================================
-        // JSON 파일 로드
+        // 세션 캐시에서 JSON 로드 (LoadJsonCommand가 미리 채워둠)
         // ============================================================
 
-        private void BtnBrowse_Click(object sender, RoutedEventArgs e)
+        private void LoadFromSession()
         {
-            var dlg = new OpenFileDialog
+            LoadedData = SessionCache.LoadedJson;
+            TxtJsonPath.Text = "JSON: " + (string.IsNullOrEmpty(SessionCache.LoadedJsonPath)
+                ? "(세션 메모리)"
+                : System.IO.Path.GetFileName(SessionCache.LoadedJsonPath));
+
+            if (LoadedData?.StructureRegions == null || LoadedData.StructureRegions.Count == 0)
             {
-                Filter = "JSON 파일 (*.json)|*.json",
-                Title = "Civil3D 내보내기 JSON 선택"
-            };
+                TxtInfo.Text = "JSON에 StructureRegions 데이터가 없습니다.";
+                return;
+            }
 
-            if (dlg.ShowDialog() != true) return;
-
-            TxtJsonPath.Text = dlg.FileName;
-
-            try
+            _cycleStates.Clear();
+            foreach (var cycle in LoadedData.StructureRegions)
             {
-                string json = System.IO.File.ReadAllText(dlg.FileName, System.Text.Encoding.UTF8);
-                LoadedData = JsonConvert.DeserializeObject<CivilExportData>(json);
-
-                if (LoadedData?.StructureRegions == null || LoadedData.StructureRegions.Count == 0)
+                double totalArea = cycle.Regions?.Sum(r => r.Area) ?? 0;
+                int count = cycle.Regions?.Count ?? 0;
+                _cycleStates[cycle.CycleKey] = new CycleSharedState
                 {
-                    MessageBox.Show("StructureRegions 데이터가 없습니다.", "오류");
-                    return;
-                }
+                    CycleKey = cycle.CycleKey,
+                    TotalArea = totalArea,
+                    TotalCount = count,
+                    SelectedCount = count
+                };
+            }
 
-                // 사이클(구조도)별 공유 상태 생성
-                _cycleStates.Clear();
-                foreach (var cycle in LoadedData.StructureRegions)
+            _regionItems.Clear();
+            foreach (var cycle in LoadedData.StructureRegions)
+            {
+                _cycleStates.TryGetValue(cycle.CycleKey, out var state);
+                foreach (var region in cycle.Regions)
                 {
-                    double totalArea = cycle.Regions?.Sum(r => r.Area) ?? 0;
-                    int count = cycle.Regions?.Count ?? 0;
-                    _cycleStates[cycle.CycleKey] = new CycleSharedState
+                    _regionItems.Add(new RegionItem
                     {
+                        IsChecked = true,
                         CycleKey = cycle.CycleKey,
-                        TotalArea = totalArea,
-                        TotalCount = count,
-                        SelectedCount = count // 초기 전체 선택
-                    };
+                        RegionId = region.Id,
+                        AreaMm2 = region.Area,
+                        VertexCount = region.VertexCount,
+                        Layer = region.Layer ?? "",
+                        RegionData = region,
+                        ParentCycle = cycle,
+                        SharedState = state
+                    });
                 }
-
-                // 영역별 아이템 생성 (공유 상태 참조)
-                _regionItems.Clear();
-                foreach (var cycle in LoadedData.StructureRegions)
-                {
-                    _cycleStates.TryGetValue(cycle.CycleKey, out var state);
-                    foreach (var region in cycle.Regions)
-                    {
-                        _regionItems.Add(new RegionItem
-                        {
-                            IsChecked = true,
-                            CycleKey = cycle.CycleKey,
-                            RegionId = region.Id,
-                            AreaMm2 = region.Area,
-                            VertexCount = region.VertexCount,
-                            Layer = region.Layer ?? "",
-                            RegionData = region,
-                            ParentCycle = cycle,
-                            SharedState = state
-                        });
-                    }
-                }
-
-                UpdateSelectionInfo();
-                RecomputeAllGroupSelectedCounts();
-                BtnCreate.IsEnabled = true;
-
-                int totalRegions = _regionItems.Count;
-                int cycleCount = _cycleStates.Count;
-                TxtInfo.Text = $"프로젝트: {LoadedData.ProjectName} | " +
-                               $"{cycleCount}개 사이클, 총 {totalRegions}개 영역";
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"JSON 파싱 오류:\n{ex.Message}", "오류");
-            }
+
+            UpdateSelectionInfo();
+            RecomputeAllGroupSelectedCounts();
+            BtnCreate.IsEnabled = true;
+
+            int totalRegions = _regionItems.Count;
+            int cycleCount = _cycleStates.Count;
+            TxtInfo.Text = $"프로젝트: {LoadedData.ProjectName} | " +
+                           $"{cycleCount}개 사이클, 총 {totalRegions}개 영역";
         }
 
         // ============================================================

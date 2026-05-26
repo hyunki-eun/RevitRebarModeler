@@ -1,0 +1,262 @@
+<Window x:Class="RevitRebarModeler.UI.ScheduleWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="보강철근 수량 일람표" Width="1280" Height="780" MinWidth="1000" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Background="#F5F5F5" FontFamily="맑은 고딕">
+
+    <Window.Resources>
+        <Style TargetType="Button" x:Key="PrimaryBtn">
+            <Setter Property="Background" Value="#2563EB"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Padding" Value="24,10"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" Background="{TemplateBinding Background}" CornerRadius="5"
+                                Padding="{TemplateBinding Padding}">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="6" Opacity="0.25" ShadowDepth="1" Color="#1E3A8A"/>
+                            </Border.Effect>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#1D4ED8"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Background" Value="#94A3B8"/>
+                                <Setter TargetName="Root" Property="Effect" Value="{x:Null}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="Button" x:Key="SecBtn">
+            <Setter Property="Background" Value="#E2E8F0"/>
+            <Setter Property="Foreground" Value="#334155"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#CBD5E1"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="DataGrid">
+            <Setter Property="AutoGenerateColumns" Value="False"/>
+            <Setter Property="CanUserAddRows" Value="False"/>
+            <Setter Property="CanUserDeleteRows" Value="False"/>
+            <Setter Property="GridLinesVisibility" Value="All"/>
+            <Setter Property="HeadersVisibility" Value="Column"/>
+            <Setter Property="RowHeaderWidth" Value="0"/>
+            <Setter Property="AlternatingRowBackground" Value="#F8FAFC"/>
+            <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="RowHeight" Value="22"/>
+        </Style>
+        <!-- 편집 가능 셀 시각 표시 -->
+        <Style TargetType="DataGridCell" x:Key="EditableCell">
+            <Setter Property="Background" Value="#FEF3C7"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 헤더 -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+            <TextBlock Text="보강철근 수량 일람표" FontSize="18" FontWeight="Bold" Foreground="#1E293B"/>
+            <TextBlock Text="현재 모델 데이터를 일람표 1/2/3으로 보여줍니다. 데이터가 맞으면 [추출]을 클릭하세요."
+                       FontSize="12" Foreground="#64748B" Margin="0,4,0,0"/>
+            <TextBlock x:Name="TxtStats" FontSize="11" Foreground="#94A3B8" Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <!-- 할증율 + 출력 옵션 -->
+        <Border Grid.Row="1" Background="White" CornerRadius="6" Padding="12" Margin="0,0,0,8"
+                BorderBrush="#E2E8F0" BorderThickness="1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="할증율 (I):" FontWeight="SemiBold" VerticalAlignment="Center"
+                           Foreground="#1E293B" Margin="0,0,8,0"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <TextBox x:Name="TxtSurcharge" Text="3.0" Width="60" Height="24"
+                             VerticalContentAlignment="Center" Padding="6,0"
+                             TextChanged="TxtSurcharge_TextChanged"/>
+                    <TextBlock Text="%" Margin="6,0,0,0" VerticalAlignment="Center" Foreground="#475569"/>
+                    <TextBlock Text="(변경 시 그리드 자동 재계산)" Margin="14,0,0,0"
+                               VerticalAlignment="Center" FontSize="10" Foreground="#94A3B8"/>
+                </StackPanel>
+                <StackPanel Grid.Column="3" Orientation="Horizontal">
+                    <CheckBox x:Name="ChkExcel" Content="Excel" IsChecked="True"
+                              VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <CheckBox x:Name="ChkRevitSchedule" Content="Revit 일람표" IsChecked="True"
+                              VerticalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- TabControl 3개 탭 -->
+        <TabControl Grid.Row="2" Margin="0,0,0,8" Background="White" BorderBrush="#E2E8F0">
+            <!-- 일람표 1 -->
+            <TabItem Header="일람표 1 — TYPE × 직경">
+                <DataGrid x:Name="GridSheet1" CellEditEnding="Grid_CellEditEnding">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="구 분" Binding="{Binding TypeLabel}" Width="80" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="직경" Binding="{Binding DiameterLabelWithSuffix}" Width="80" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="전체 철근 길이 C(m)"
+                                            Binding="{Binding TotalLengthM, StringFormat=#\,##0.000}" Width="130" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="수량 D" Binding="{Binding Count}" Width="60" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="1m당 철근개수 E ✎"
+                                            Binding="{Binding SetCount, StringFormat=#\,##0.00, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                            Width="120"
+                                            CellStyle="{StaticResource EditableCell}"/>
+                        <DataGridTextColumn Header="철근 총길이 F(m)"
+                                            Binding="{Binding RebarTotalLengthM, StringFormat=#\,##0.000}" Width="110" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="단위중량 G(kg/m) ✎"
+                                            Binding="{Binding UnitWeightKgPerM, StringFormat=0.000, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                            Width="115"
+                                            CellStyle="{StaticResource EditableCell}"/>
+                        <DataGridTextColumn Header="총중량 H(kg)"
+                                            Binding="{Binding TotalWeightKg, StringFormat=#\,##0.00}" Width="100" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="할증 I(%) ✎"
+                                            Binding="{Binding SurchargePercent, StringFormat=0.0, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                            Width="85"
+                                            CellStyle="{StaticResource EditableCell}"/>
+                        <DataGridTextColumn Header="할증중량 J(kg)"
+                                            Binding="{Binding WeightWithSurchargeKg, StringFormat=#\,##0.00}" Width="110" IsReadOnly="True"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- 일람표 2 -->
+            <TabItem Header="일람표 2 — 마크 인터리브">
+                <DataGrid x:Name="GridSheet2" CellEditEnding="Grid_CellEditEnding">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="01_타입" Binding="{Binding TypeLabel}" Width="80" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="일람표 마크" Binding="{Binding MarkLabel}" Width="90" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="유형" Binding="{Binding DiameterLabel}" Width="100" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="전체 철근 길이(m)"
+                                            Binding="{Binding TotalLengthM, StringFormat=#\,##0.000}" Width="115" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="철근 길이(m)"
+                                            Binding="{Binding TotalLengthM, StringFormat=#\,##0.000}" Width="100" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="수량"
+                                            Binding="{Binding Count}" Width="60" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="1m당 개수 ✎"
+                                            Binding="{Binding OneMPerCount, StringFormat=0.00, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                            Width="95"
+                                            CellStyle="{StaticResource EditableCell}"/>
+                        <DataGridTextColumn Header="철근 총길이(m)"
+                                            Binding="{Binding TotalLengthPerMmInM, StringFormat=#\,##0.000}" Width="110" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="단위중량(kg/m) ✎"
+                                            Binding="{Binding UnitWeightKgM, StringFormat=0.000, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                            Width="115"
+                                            CellStyle="{StaticResource EditableCell}"/>
+                        <DataGridTextColumn Header="총중량(t)"
+                                            Binding="{Binding TotalWeightT, StringFormat=0.000}" Width="80" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="05_% ✎"
+                                            Binding="{Binding SurchargePercent, StringFormat=0, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                            Width="65"
+                                            CellStyle="{StaticResource EditableCell}"/>
+                        <DataGridTextColumn Header="총중량_ADD(t)"
+                                            Binding="{Binding SurchargeTotalT, StringFormat=0.000}" Width="100" IsReadOnly="True"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- 일람표 3 -->
+            <TabItem Header="일람표 3 — Cycle 그룹 + 해설">
+                <DataGrid x:Name="GridSheet3" CellEditEnding="Grid_CellEditEnding">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="01_타입" Binding="{Binding TypeLabel}" Width="80" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="해설" Binding="{Binding SubGroupLabel}" Width="100" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="일람표 마크" Binding="{Binding MarkLabel}" Width="90" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="유형" Binding="{Binding DiameterLabel}" Width="100" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="철근 길이(m)"
+                                            Binding="{Binding TotalLengthM, StringFormat=#\,##0.000}" Width="100" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="수량"
+                                            Binding="{Binding Count}" Width="60" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="전체 철근 길이(m)"
+                                            Binding="{Binding TotalLengthM, StringFormat=#\,##0.000}" Width="115" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="1m당 개수 ✎"
+                                            Binding="{Binding OneMPerCount, StringFormat=0.00, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                            Width="95"
+                                            CellStyle="{StaticResource EditableCell}"/>
+                        <DataGridTextColumn Header="철근 총길이(m)"
+                                            Binding="{Binding TotalLengthPerMmInM, StringFormat=#\,##0.000}" Width="110" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="단위중량(kg/m) ✎"
+                                            Binding="{Binding UnitWeightKgM, StringFormat=0.000, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                            Width="115"
+                                            CellStyle="{StaticResource EditableCell}"/>
+                        <DataGridTextColumn Header="총중량(t)"
+                                            Binding="{Binding TotalWeightT, StringFormat=0.000}" Width="80" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="05_% ✎"
+                                            Binding="{Binding SurchargePercent, StringFormat=0, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                            Width="65"
+                                            CellStyle="{StaticResource EditableCell}"/>
+                        <DataGridTextColumn Header="총중량_ADD(t)"
+                                            Binding="{Binding SurchargeTotalT, StringFormat=0.000}" Width="100" IsReadOnly="True"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+        </TabControl>
+
+        <!-- Excel 저장 경로 -->
+        <Border Grid.Row="3" Background="White" CornerRadius="6" Padding="10" Margin="0,0,0,8"
+                BorderBrush="#E2E8F0" BorderThickness="1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Excel 경로:" FontWeight="SemiBold" VerticalAlignment="Center"
+                           Foreground="#1E293B" Margin="0,0,8,0"/>
+                <TextBox Grid.Column="1" x:Name="TxtExcelPath" Height="26"
+                         VerticalContentAlignment="Center" Padding="6,0"/>
+                <Button Grid.Column="2" Content="찾아보기" Style="{StaticResource SecBtn}" Width="80" Height="28"
+                        Margin="6,0,0,0" Click="BtnBrowse_Click"/>
+            </Grid>
+        </Border>
+
+        <!-- 상태 -->
+        <TextBlock Grid.Row="4" x:Name="TxtInfo" Foreground="#64748B" FontSize="11" TextWrapping="Wrap"
+                   Margin="0,0,0,8"/>
+
+        <!-- 하단 버튼 -->
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="추출" Style="{StaticResource PrimaryBtn}" Width="120" Height="42"
+                    Click="BtnExport_Click" x:Name="BtnExport" Margin="0,0,8,0"/>
+            <Button Content="취소" Style="{StaticResource SecBtn}" Width="80" Height="38" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

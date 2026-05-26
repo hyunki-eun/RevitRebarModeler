@@ -104,27 +104,13 @@
                        FontSize="12" Foreground="#64748B" Margin="0,4,0,0"/>
         </StackPanel>
 
-        <!-- Step 1: JSON 파일 선택 및 시각화 가이드 -->
-        <Grid Grid.Row="1" Margin="0,0,0,8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="620"/>
-            </Grid.ColumnDefinitions>
-
-            <!-- Step 1: JSON 파일 선택 -->
-            <Border Grid.Column="0" Background="White" CornerRadius="6" Padding="14" Margin="0,0,8,0"
-                    BorderBrush="#E2E8F0" BorderThickness="1">
-                <StackPanel>
-                    <TextBlock Text="Step 1. JSON 파일 선택" FontSize="14" FontWeight="SemiBold" Foreground="#1E293B" Margin="0,0,0,8"/>
-                    <DockPanel>
-                        <Button DockPanel.Dock="Right" Content="찾아보기" Style="{StaticResource SecBtn}" Width="80" Margin="8,0,0,0" Click="BtnBrowse_Click"/>
-                        <TextBox x:Name="TxtJsonPath" IsReadOnly="True" VerticalContentAlignment="Center" Height="28"/>
-                    </DockPanel>
-                </StackPanel>
-            </Border>
+        <!-- 세션 JSON 경로 + 시각화 가이드 -->
+        <StackPanel Grid.Row="1" Margin="0,0,0,8">
+            <TextBlock x:Name="TxtJsonPath" Margin="0,0,0,8"
+                       FontSize="11" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
 
             <!-- 철근 배치 가이드 다이어그램: Pos1 × Pos2 조합 9개 포인트 매트릭스 -->
-            <Border Grid.Column="1" Background="#F8FAFC" CornerRadius="6" Padding="12"
+            <Border Background="#F8FAFC" CornerRadius="6" Padding="12"
                     BorderBrush="#E2E8F0" BorderThickness="1">
                 <StackPanel>
                     <TextBlock Text="Pos1 × Pos2 배치 위치 가이드 (9개 조합)" FontSize="11" FontWeight="SemiBold" Foreground="#475569" Margin="0,0,0,4"/>
@@ -214,13 +200,13 @@
                     </TextBlock>
                 </StackPanel>
             </Border>
-        </Grid>
+        </StackPanel>
 
-        <!-- Step 2: 구조도별 설정 -->
+        <!-- 구조도별 설정 -->
         <Border Grid.Row="2" Background="White" CornerRadius="6" Padding="14" Margin="0,0,0,8"
                 BorderBrush="#E2E8F0" BorderThickness="1">
             <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="Step 2. 구조도별 설정" FontSize="14" FontWeight="SemiBold"
+                <TextBlock DockPanel.Dock="Top" Text="구조도별 설정" FontSize="14" FontWeight="SemiBold"
                            Foreground="#1E293B" Margin="0,0,0,8"/>
                 <TextBlock DockPanel.Dock="Top"
                            Text="1번째: 철근 기준 curve (내측/중앙/외측) | 2번째: 1번째에서 radial shift | CTC: 중심 기준 좌우 간격 | 갯수: 구조도당 총 철근 수 (짝수, 4N+2 권장) | offset: D_횡+D_종 (sample별 dominant 직경 기준 동적 적용, 분해는 옆 컬럼 참고)"

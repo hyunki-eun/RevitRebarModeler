@@ -43,6 +43,16 @@ namespace RevitRebarModeler
                 var panel = app.CreateRibbonPanel(tabName, "구조물");
                 string dllPath = Assembly.GetExecutingAssembly().Location;
 
+                var btnLoadJson = new PushButtonData(
+                    "cmdLoadJson",
+                    "Civil3D JSON\n불러오기",
+                    dllPath,
+                    "RevitRebarModeler.Commands.LoadJsonCommand")
+                {
+                    ToolTip = "Civil3D 추출 JSON을 세션 메모리에 로드합니다. 이후 모든 명령이 이 JSON을 자동 사용합니다."
+                };
+                panel.AddItem(btnLoadJson);
+
                 var btnCreate = new PushButtonData(
                     "cmdCreateStructure",
                     "구조물 생성\n(JSON)",
@@ -102,6 +112,16 @@ namespace RevitRebarModeler
                     ToolTip = "현재 문서의 종/횡/전단 철근을 Mark 패턴으로 분류해 JSON으로 추출합니다 (검증/비교용)."
                 };
                 panel.AddItem(btnExportRebars);
+
+                var btnSchedule = new PushButtonData(
+                    "cmdCreateSchedule",
+                    "수량\n일람표",
+                    dllPath,
+                    "RevitRebarModeler.Commands.CreateScheduleCommand")
+                {
+                    ToolTip = "현재 모델의 보강철근을 구조도×종류×직경으로 집계하여 Excel 또는 Revit 일람표로 출력합니다."
+                };
+                panel.AddItem(btnSchedule);
 
                 return Result.Succeeded;
             }
