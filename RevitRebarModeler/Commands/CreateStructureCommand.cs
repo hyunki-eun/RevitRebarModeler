@@ -17,6 +17,8 @@ namespace RevitRebarModeler.Commands
     {
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
+            if (!LicenseGuard.CheckOrBlock()) return Result.Cancelled;
+
             var uiApp = commandData.Application;
             var app = uiApp.Application;
             var doc = uiApp.ActiveUIDocument.Document;

@@ -23,6 +23,8 @@ namespace RevitRebarModeler.Commands
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
+            if (!LicenseGuard.CheckOrBlock()) return Result.Cancelled;
+
             var doc = commandData.Application.ActiveUIDocument.Document;
 
             if (SessionCache.LoadedJson == null)

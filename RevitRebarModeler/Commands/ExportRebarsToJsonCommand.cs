@@ -11,6 +11,8 @@ using Autodesk.Revit.UI;
 
 using Newtonsoft.Json;
 
+using RevitRebarModeler.Models;
+
 namespace RevitRebarModeler.Commands
 {
     /// <summary>
@@ -29,6 +31,8 @@ namespace RevitRebarModeler.Commands
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
+            if (!LicenseGuard.CheckOrBlock()) return Result.Cancelled;
+
             var uidoc = commandData.Application.ActiveUIDocument;
             var doc = uidoc.Document;
 

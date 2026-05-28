@@ -16,6 +16,8 @@ namespace RevitRebarModeler.Commands
     {
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
+            if (!LicenseGuard.CheckOrBlock()) return Result.Cancelled;
+
             var doc = commandData.Application.ActiveUIDocument.Document;
 
             // 모델에 Rebar 요소가 하나도 없으면 즉시 안내

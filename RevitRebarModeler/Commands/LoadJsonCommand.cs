@@ -22,6 +22,8 @@ namespace RevitRebarModeler.Commands
     {
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
+            if (!LicenseGuard.CheckOrBlock()) return Result.Cancelled;
+
             var dlg = new OpenFileDialog
             {
                 Filter = "JSON 파일 (*.json)|*.json",

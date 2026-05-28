@@ -7,7 +7,7 @@
 ; ============================================================================
 
 #define MyAppName       "RevitRebarModeler"
-#define MyAppVersion    "1.0.4"
+#define MyAppVersion    "1.0.6"
 #define MyAppPublisher  "Geotechnical Tunnel Division R&D"
 #define MyAppDescription "Revit 보강철근 모델링 / 수량 일람표 애드인 (Revit 2024)"
 #define RevitVersion    "2024"
@@ -26,8 +26,8 @@ OutputDir=Output
 OutputBaseFilename={#MyAppName}_Setup_v{#MyAppVersion}
 Compression=lzma2
 SolidCompression=yes
-ArchitecturesInstallIn64BitMode=x64
-ArchitecturesAllowed=x64
+ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed=x64compatible
 WizardStyle=modern
 UninstallDisplayName={#MyAppName} (Revit {#RevitVersion})
 UninstallDisplayIcon={app}\{#MyAppName}\{#MyAppName}.dll
@@ -35,6 +35,10 @@ UninstallDisplayIcon={app}\{#MyAppName}\{#MyAppName}.dll
 [Languages]
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
+
+; 이전 버전 잔존 파일 제거 — 신규 빌드에서 제거된 dll이 남는 문제 방지
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\{#MyAppName}"
 
 [Files]
 ; manifest (addin) — Addins\2024\ 루트에 직접 배치
