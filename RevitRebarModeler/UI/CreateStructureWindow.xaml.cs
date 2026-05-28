@@ -15,7 +15,11 @@ namespace RevitRebarModeler.UI
     {
         public CivilExportData LoadedData { get; private set; }
         public List<StructureCycleData> SelectedCycles { get; private set; }
-        public double DepthMm { get; private set; } = 1000;
+
+        /// <summary>
+        /// 구조도(CycleKey) → 돌출 깊이(mm). 사용자가 헤더 입력란에서 개별 설정.
+        /// </summary>
+        public Dictionary<string, double> DepthByCycle { get; private set; } = new Dictionary<string, double>();
 
         private ObservableCollection<RegionItem> _regionItems = new ObservableCollection<RegionItem>();
         private Dictionary<string, CycleSharedState> _cycleStates = new Dictionary<string, CycleSharedState>();
@@ -103,12 +107,6 @@ namespace RevitRebarModeler.UI
 
         private void BtnCreate_Click(object sender, RoutedEventArgs e)
         {
-            if (!double.TryParse(TxtDepth.Text, out double depth) || depth <= 0)
-            {
-                MessageBox.Show("돌출 깊이를 올바르게 입력하세요.", "오류");
-                return;
-            }
-
             var checkedItems = _regionItems.Where(r => r.IsChecked).ToList();
             if (checkedItems.Count == 0)
             {
@@ -116,14 +114,33 @@ namespace RevitRebarModeler.UI
                 return;
             }
 
-            DepthMm = depth;
+            // 선택된 구조도들의 두께 검증 — 0 이하/NaN 차단
+            var cycleGroups = checkedItems.GroupBy(r => r.CycleKey).ToList();
+            var invalid = new List<string>();
+            foreach (var group in cycleGroups)
+            {
+                double d = group.First().SharedState?.DepthMm ?? 0;
+                if (d <= 0 || double.IsNaN(d) || double.IsInfinity(d))
+                    invalid.Add(group.Key);
+            }
+            if (invalid.Count > 0)
+            {
+                MessageBox.Show(
+                    $"다음 구조도의 두께가 올바르지 않습니다:\n  {string.Join(", ", invalid)}\n\n" +
+                    "각 헤더의 [두께] 입력란에 양수(mm)를 입력하세요.",
+                    "오류");
+                return;
+            }
 
-            var cycleGroups = checkedItems.GroupBy(r => r.CycleKey);
+            DepthByCycle = new Dictionary<string, double>();
             var selected = new List<StructureCycleData>();
 
             foreach (var group in cycleGroups)
             {
                 var regions = group.Select(r => r.RegionData).ToList();
+                double depthMm = group.First().SharedState?.DepthMm ?? 1000;
+                DepthByCycle[group.Key] = depthMm;
+
                 selected.Add(new StructureCycleData
                 {
                     CycleKey = group.Key,
@@ -135,6 +152,19 @@ namespace RevitRebarModeler.UI
             SelectedCycles = selected;
             DialogResult = true;
             Close();
+        }
+
+        /// <summary>
+        /// 그룹 헤더의 두께 TextBox를 클릭했을 때 Expander가 토글되는 것을 차단.
+        /// </summary>
+        private void DepthTextBox_PreviewMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (sender is TextBox tb && !tb.IsKeyboardFocusWithin)
+            {
+                tb.Focus();
+                tb.SelectAll();
+                e.Handled = true;
+            }
         }
 
         // ============================================================
@@ -260,6 +290,20 @@ namespace RevitRebarModeler.UI
             }
         }
 
+        private double _depthMm = 1000;
+        public double DepthMm
+        {
+            get => _depthMm;
+            set
+            {
+                if (Math.Abs(_depthMm - value) > 1e-9)
+                {
+                    _depthMm = value;
+                    Notify(nameof(DepthMm));
+                }
+            }
+        }
+
         public string SelectedAreaDisplay => $"{_selectedArea / 1_000_000:F2}";
         public string TotalAreaDisplay => $"{TotalArea / 1_000_000:F2}";
 
@@ -294,6 +338,20 @@ namespace RevitRebarModeler.UI
         // 그룹 헤더 바인딩용 passthrough
         public int GroupSelectedCount => SharedState?.SelectedCount ?? 0;
         public string GroupAreaDisplay => SharedState?.SelectedAreaDisplay ?? "0";
+
+        // 그룹 헤더의 두께 입력란(TwoWay) — SharedState.DepthMm로 위임
+        public double GroupDepthMm
+        {
+            get => SharedState?.DepthMm ?? 1000;
+            set
+            {
+                if (SharedState != null && Math.Abs(SharedState.DepthMm - value) > 1e-9)
+                {
+                    SharedState.DepthMm = value;
+                    Notify(nameof(GroupDepthMm));
+                }
+            }
+        }
 
         public event PropertyChangedEventHandler PropertyChanged;
         private void Notify(string name) =>

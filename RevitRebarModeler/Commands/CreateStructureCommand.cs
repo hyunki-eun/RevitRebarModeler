@@ -35,7 +35,7 @@ namespace RevitRebarModeler.Commands
                 return Result.Cancelled;
 
             var selectedCycles = window.SelectedCycles;
-            double depthMm = window.DepthMm;
+            var depthByCycle = window.DepthByCycle ?? new Dictionary<string, double>();
 
             // 세션 GlobalOrigin 초기화 및 JSON 기반 자동 설정
             Civil3DCoordinate.ResetGlobalOrigin();
@@ -55,7 +55,8 @@ namespace RevitRebarModeler.Commands
 
                 foreach (var cycle in selectedCycles)
                 {
-                    fullLog.Add($"\n========== [{cycle.CycleKey}] Region={cycle.RegionCount}개 ==========");
+                    double depthMm = depthByCycle.TryGetValue(cycle.CycleKey, out double d) ? d : 1000;
+                    fullLog.Add($"\n========== [{cycle.CycleKey}] Region={cycle.RegionCount}개, depth={depthMm}mm ==========");
                     try
                     {
                         var result = creator.CreateFamily(doc, cycle, depthMm);
@@ -137,11 +138,15 @@ namespace RevitRebarModeler.Commands
                 string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 logPath = Path.Combine(logDir, $"CreateStructure_{stamp}.log");
 
+                var depthSummary = depthByCycle.Count > 0
+                    ? string.Join(", ", depthByCycle.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}={kv.Value:N0}mm"))
+                    : "(없음)";
+
                 var lines = new List<string>
                 {
                     $"=== 구조 프레임 생성 로그 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===",
                     $"성공: {created} / 실패: {failed} / 선택 사이클: {selectedCycles.Count}",
-                    $"돌출 깊이: {depthMm}mm",
+                    $"돌출 깊이 (구조도별): {depthSummary}",
                     $"GlobalOrigin: ({Civil3DCoordinate.GlobalOriginXMm:F1}, {Civil3DCoordinate.GlobalOriginYMm:F1}) mm [IsSet={Civil3DCoordinate.IsSet}]",
                     ""
                 };
@@ -166,9 +171,17 @@ namespace RevitRebarModeler.Commands
             }
 
             // ── 사용자 다이얼로그: 핵심 결과만 ──
+            string depthMsg;
+            if (depthByCycle.Count == 0)
+                depthMsg = "(없음)";
+            else if (depthByCycle.Values.Distinct().Count() == 1)
+                depthMsg = $"{depthByCycle.Values.First():N0}mm";
+            else
+                depthMsg = string.Join(", ", depthByCycle.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key} {kv.Value:N0}mm"));
+
             string msg = $"구조물 생성 완료\n\n" +
                          $"  생성: {created}개  /  실패: {failed}개\n" +
-                         $"  돌출 길이: {depthMm:N0}mm";
+                         $"  돌출 길이: {depthMsg}";
 
             if (failedNames.Count > 0)
             {

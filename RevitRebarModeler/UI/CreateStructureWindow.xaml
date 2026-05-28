@@ -116,17 +116,13 @@
         <TextBlock Grid.Row="1" x:Name="TxtJsonPath" Margin="0,0,0,8"
                    FontSize="11" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
 
-        <!-- 돌출 설정 -->
+        <!-- 안내 -->
         <Border Grid.Row="2" Background="White" CornerRadius="6" Padding="14" Margin="0,0,0,8"
                 BorderBrush="#E2E8F0" BorderThickness="1">
             <StackPanel>
                 <TextBlock Text="구조물 두께 설정" FontSize="14" FontWeight="SemiBold"
-                           Foreground="#1E293B" Margin="0,0,0,8"/>
-                <TextBlock Text="생성될 3D 솔리드의 두께(돌출 깊이)를 설정합니다." FontSize="11" Foreground="#64748B" Margin="0,0,0,8"/>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="돌출 깊이 (mm):" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <TextBox x:Name="TxtDepth" Text="1000" Width="100" VerticalContentAlignment="Center" Height="24"/>
-                </StackPanel>
+                           Foreground="#1E293B" Margin="0,0,0,4"/>
+                <TextBlock Text="아래 각 구조도(단면)별로 돌출 깊이(mm)를 개별 입력할 수 있습니다. 기본값은 1000mm 입니다." FontSize="11" Foreground="#64748B"/>
             </StackPanel>
         </Border>
 
@@ -178,7 +174,20 @@
                                                                 <Run Text="{Binding Items[0].GroupAreaDisplay, Mode=OneWay, FallbackValue=0}" FontWeight="SemiBold"/>
                                                                 <Run Text=" m²"/>
                                                             </TextBlock>
-                                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="12,0,0,0">
+                                                            <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                                                        Margin="12,0,0,0" VerticalAlignment="Center">
+                                                                <TextBlock Text="두께" VerticalAlignment="Center"
+                                                                           Foreground="#334155" FontSize="11" Margin="0,0,4,0"/>
+                                                                <TextBox Width="60" Height="22" FontSize="11"
+                                                                         VerticalContentAlignment="Center"
+                                                                         HorizontalContentAlignment="Right"
+                                                                         Text="{Binding Items[0].GroupDepthMm, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, FallbackValue=1000}"
+                                                                         PreviewMouseDown="DepthTextBox_PreviewMouseDown"
+                                                                         PreviewMouseLeftButtonDown="DepthTextBox_PreviewMouseDown"/>
+                                                                <TextBlock Text="mm" VerticalAlignment="Center"
+                                                                           Foreground="#64748B" FontSize="11" Margin="4,0,0,0"/>
+                                                            </StackPanel>
+                                                            <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="12,0,0,0">
                                                                 <Button Content="✓ 전체" Style="{StaticResource SecBtn}"
                                                                         Tag="{Binding Name}" Click="BtnGroupSelectAll_Click"
                                                                         Padding="6,2" FontSize="10" Margin="0,0,4,0"/>
