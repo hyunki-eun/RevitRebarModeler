@@ -313,9 +313,13 @@ namespace RevitRebarModeler.Commands
                             if (transDiamMap.TryGetValue(structureKey, out double td))
                                 transDiamFt = td;
 
-                            // 레그 길이 연장량: 횡철근 두께 + 종철근 두께
-                            double extOuter = transDiamFt + pair.Outer.DiameterFt;
-                            double extInner = transDiamFt + pair.Inner.DiameterFt;
+                            // 전단철근이 케이지를 바깥에서 감싸며 생기는 겹침은 다리(b·d) 쪽에서 보정.
+                            // 다리 양 끝에 D_전단/2씩 → 다리 길이 b=d가 D_전단(두께)만큼 늘어남. (c는 미적용)
+                            double shearRadiusFt = GetBarDiameterFt(barType) / 2.0;
+
+                            // 레그 길이 연장량: 횡철근 두께 + 종철근 두께 + 전단 반지름
+                            double extOuter = transDiamFt + pair.Outer.DiameterFt + shearRadiusFt;
+                            double extInner = transDiamFt + pair.Inner.DiameterFt + shearRadiusFt;
 
                             // 내측→외측 방향 벡터 (X-Z 평면 기준; Revit Y는 종방향이므로 제외)
                             double dx = outXY.X - inXY.X;
@@ -329,6 +333,7 @@ namespace RevitRebarModeler.Commands
                             double inOffsetZ = pair.Inner.DiameterFt;
 
                             // 상단 가로(pSO↔pEO) Y방향 양끝 연장량 = (횡철근 + 외측 종철근) / 2
+                            // (c는 전단 두께를 더하지 않음 — 겹침 보정은 다리 b·d 쪽에서만)
                             double topExtFt = (transDiamFt + pair.Outer.DiameterFt) / 2.0;
 
                             // 외측 끝점: 내측→외측 방향으로 extOuter 연장 + Y(종방향) topExtFt 추가 + Z 드롭
