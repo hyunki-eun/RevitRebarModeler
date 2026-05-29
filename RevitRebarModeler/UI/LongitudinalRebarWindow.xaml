@@ -216,6 +216,15 @@
                     <ListView.View>
                         <GridView>
                             <GridViewColumn Header="구조도" Width="Auto" DisplayMemberBinding="{Binding SheetKey}"/>
+                            <GridViewColumn Header="마크" Width="Auto">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding MarkLabelDisplay}"
+                                                   Foreground="#7C3AED" FontWeight="SemiBold"
+                                                   ToolTip="일람표2/3에서 부여될 예상 마크 라벨"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
                             <GridViewColumn Header="내측 곡선" Width="Auto" DisplayMemberBinding="{Binding InnerPolylineCount}"/>
                             <GridViewColumn Header="외측 곡선" Width="Auto" DisplayMemberBinding="{Binding OuterPolylineCount}"/>
                             <GridViewColumn Header="호길이 (mm)" Width="Auto" DisplayMemberBinding="{Binding ArcLenDisplay}"/>
@@ -251,6 +260,16 @@
                                         <ComboBox SelectedValue="{Binding DiameterLabel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                   ItemsSource="{Binding DataContext.DiameterOptions, RelativeSource={RelativeSource AncestorType=Window}}"
                                                   Width="70" Height="24"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="등급" Width="Auto">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ComboBox SelectedValue="{Binding Grade, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  ItemsSource="{Binding DataContext.GradeOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                  Width="115" Height="24"
+                                                  ToolTip="봉강 등급 — 디바(SD300)는 기본, 하이바·슈퍼바는 Mark에 _SD400/_SD500 suffix가 붙음"/>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>

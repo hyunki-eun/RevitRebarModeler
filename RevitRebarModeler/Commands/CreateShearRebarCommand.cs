@@ -77,6 +77,11 @@ namespace RevitRebarModeler.Commands
                 return Result.Failed;
             }
 
+            // 구조도별 내측 횡방향 패널(좌=1·중=2·우=3…) Revit XZ 점군.
+            //   전단철근 T 마크를 "가로 위치(좌/중/우)"로 부여하기 위한 판정 기준.
+            //   (AutoSetGlobalOrigin 이후라야 ToRevitWorld 좌표가 유효)
+            var innerPanelMap = BuildInnerPanelMap(loadedData);
+
             int created = 0;
             int createdStdHook = 0;     // Standard + RebarHookType 부착
             int createdStdNoHook = 0;   // Standard, hook 없이 (1차 실패 후 후크 빼고 재시도)
@@ -106,7 +111,8 @@ namespace RevitRebarModeler.Commands
                     .ToList();
 
                 var longiByKey = new Dictionary<string, List<LongiRebarRef>>();
-                var markRegex = new Regex(@"^(구조도\(\d+\))_longi_(outer|inner)_(\d+)단$");
+                // (_SD\d+)? — 봉강 등급 suffix (SD400/500). SD300은 suffix 없음 → 호환.
+                var markRegex = new Regex(@"^(구조도\(\d+\))_longi_(outer|inner)_(\d+)단(_SD\d+)?$");
                 foreach (var r in allRebars)
                 {
                     string mk = r.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.AsString() ?? "";
@@ -277,6 +283,11 @@ namespace RevitRebarModeler.Commands
                         XYZ outXY = pair.Outer.Start;
                         XYZ inXY  = pair.Inner.Start;
 
+                        // 가로 위치(좌/중/우) 판정 → T 마크 인덱스. 내측 종철근 위치를
+                        // 가장 가까운 내측 횡방향 패널에 매칭. (깊이 묶음과 무관하게 쌍당 1회)
+                        var panelsForKey = innerPanelMap.TryGetValue(structureKey, out var pnls) ? pnls : null;
+                        int panelK = FindPanelK(panelsForKey, inXY);
+
                         for (int i = 0; i < bundles.Count; i++)
                         {
                             bool isBundleA = (i % 2 == 0);
@@ -335,7 +346,8 @@ namespace RevitRebarModeler.Commands
 
                             if (curves.Count < 3) { failed++; continue; }
 
-                            string mark = $"{structureKey}_shear_종{dan}_횡{sDan}-{eDan}_{(isGroupA ? "A" : "B")}";
+                            // _P{K} = 가로 위치(좌=1·중=2·우=3). 일람표에서 T{K}로 묶임.
+                            string mark = $"{structureKey}_shear_종{dan}_횡{sDan}-{eDan}_{(isGroupA ? "A" : "B")}_P{panelK}";
 
                             // 입력 normal 미리 산출 (검증에서 재사용)
                             XYZ inputNormal = XYZ.BasisY;
@@ -419,6 +431,9 @@ namespace RevitRebarModeler.Commands
 
                 tr.Commit();
             }
+
+            // 배치 직후 A/B/T 마크 라벨 즉시 기록 (수량 일람표 없이도 라벨 표시)
+            try { RebarSchedulePopulator.StampLabels(commandData.Application.Application, doc); } catch { }
 
             // ── 로그 파일용 verbose 내용 (전부 보존) ──
             string verboseLog = "═══════════════════════════════════\n" +
@@ -556,6 +571,160 @@ namespace RevitRebarModeler.Commands
             if (a == null || b == null) return;
             if (a.DistanceTo(b) < 0.001) return;
             try { list.Add(Line.CreateBound(a, b)); } catch { }
+        }
+
+        /// <summary>내측 패널 1개: 매칭용 점군 + 폴리라인 양 끝점(체인 정렬용).</summary>
+        private class InnerPanel
+        {
+            public List<XYZ> Points = new List<XYZ>();
+            public XYZ End0;   // 첫 세그 시작
+            public XYZ End1;   // 마지막 세그 끝
+        }
+
+        /// <summary>
+        /// 구조도별 "내측 횡방향 패널"(좌·중·우 …)을 Revit XZ 점군으로 구성.
+        /// 앞 절반 = 내측. 좌→우 순서는 JSON 저장 순서나 평균 X로는 보장 안 됨
+        /// (아치형은 패널 X 구간이 겹침). 대신 내측 철근이 좌→중→우로 한 줄로
+        /// 이어지는 성질을 이용해 끝점 연결(체인)을 따라 순서를 매김 → 가운데 패널은
+        /// 항상 가운데 순번. 좌/우 방향은 체인 양 끝(벽체 끝, X로 확실히 갈림)으로 정함.
+        /// 반환: 좌→우로 정렬된 패널 점군 목록 (index 0=좌 … = K1).
+        /// </summary>
+        private Dictionary<string, List<List<XYZ>>> BuildInnerPanelMap(CivilExportData data)
+        {
+            var map = new Dictionary<string, List<List<XYZ>>>();
+            if (data?.TransverseRebars == null) return map;
+
+            var byStruct = data.TransverseRebars
+                .Where(r => r.CycleNumber == 1)
+                .GroupBy(r => ExtractStructureKey(r.SheetId))
+                .Where(g => !string.IsNullOrEmpty(g.Key));
+
+            foreach (var g in byStruct)
+            {
+                var list = g.ToList();          // JSON 저장 순서
+                int half = list.Count / 2;       // 앞 절반 = 내측
+                if (half == 0) continue;
+
+                var panels = new List<InnerPanel>();
+                for (int i = 0; i < half; i++)
+                {
+                    var segs = list[i].Segments;
+                    if (segs == null || segs.Count == 0) continue;
+
+                    var panel = new InnerPanel();
+                    foreach (var seg in segs)
+                    {
+                        if (seg == null) continue;
+                        if (seg.StartPoint != null) panel.Points.Add(Civil3DCoordinate.ToRevitWorld(seg.StartPoint, 0));
+                        if (seg.MidPoint != null)   panel.Points.Add(Civil3DCoordinate.ToRevitWorld(seg.MidPoint, 0));
+                        if (seg.EndPoint != null)   panel.Points.Add(Civil3DCoordinate.ToRevitWorld(seg.EndPoint, 0));
+                    }
+                    if (panel.Points.Count == 0) continue;
+
+                    var sp = segs.Select(s => s?.StartPoint).FirstOrDefault(p => p != null);
+                    var ep = segs.Select(s => s?.EndPoint).LastOrDefault(p => p != null);
+                    panel.End0 = sp != null ? Civil3DCoordinate.ToRevitWorld(sp, 0) : panel.Points[0];
+                    panel.End1 = ep != null ? Civil3DCoordinate.ToRevitWorld(ep, 0) : panel.Points[panel.Points.Count - 1];
+                    panels.Add(panel);
+                }
+                if (panels.Count == 0) continue;
+
+                var ordered = OrderPanelsAlongChain(panels);
+                map[g.Key] = ordered.Select(p => p.Points).ToList();
+            }
+            return map;
+        }
+
+        /// <summary>
+        /// 내측 패널들을 끝점 연결(체인)을 따라 좌→우 순서로 정렬.
+        /// ① 다른 패널과 가장 멀리 떨어진 끝점 2개 = 체인 양 끝(벽체 끝).
+        /// ② X가 작은 쪽을 좌측 시작으로 잡고 최근접 끝점으로 체이닝.
+        /// 패널이 1개면 그대로 반환.
+        /// </summary>
+        private List<InnerPanel> OrderPanelsAlongChain(List<InnerPanel> panels)
+        {
+            int n = panels.Count;
+            if (n <= 1) return panels;
+
+            var ends = new List<(int pi, int we, XYZ p)>();
+            for (int i = 0; i < n; i++)
+            {
+                ends.Add((i, 0, panels[i].End0));
+                ends.Add((i, 1, panels[i].End1));
+            }
+
+            // 각 끝점의 "다른 패널 끝점까지 최소거리" — 클수록 자유단(체인 끝)
+            double FreeScore(XYZ p, int ownPi)
+            {
+                double best = double.MaxValue;
+                foreach (var o in ends)
+                {
+                    if (o.pi == ownPi) continue;
+                    double d = Dist2XZ(o.p, p);
+                    if (d < best) best = d;
+                }
+                return best;
+            }
+
+            var freeEnds = ends.OrderByDescending(e => FreeScore(e.p, e.pi)).Take(2).ToList();
+            var startEnd = freeEnds.OrderBy(e => e.p.X).First(); // 좌 = X 작은 자유단
+
+            var result = new List<InnerPanel>();
+            var visited = new bool[n];
+            int cur = startEnd.pi;
+            int entryWe = startEnd.we;
+            while (cur >= 0 && !visited[cur])
+            {
+                visited[cur] = true;
+                result.Add(panels[cur]);
+                XYZ exitPt = (entryWe == 0) ? panels[cur].End1 : panels[cur].End0;
+
+                int nextPi = -1, nextWe = 0;
+                double best = double.MaxValue;
+                for (int i = 0; i < n; i++)
+                {
+                    if (visited[i]) continue;
+                    double d0 = Dist2XZ(panels[i].End0, exitPt);
+                    double d1 = Dist2XZ(panels[i].End1, exitPt);
+                    if (d0 < best) { best = d0; nextPi = i; nextWe = 0; }
+                    if (d1 < best) { best = d1; nextPi = i; nextWe = 1; }
+                }
+                cur = nextPi;
+                entryWe = nextWe;
+            }
+            // 혹시 연결 안 된 패널은 뒤에 붙임 (안전망)
+            for (int i = 0; i < n; i++) if (!visited[i]) result.Add(panels[i]);
+            return result;
+        }
+
+        private static double Dist2XZ(XYZ a, XYZ b)
+        {
+            if (a == null || b == null) return double.MaxValue;
+            double dx = a.X - b.X, dz = a.Z - b.Z;
+            return dx * dx + dz * dz;
+        }
+
+        /// <summary>
+        /// 주어진 점(Revit XYZ)을 가장 가까운 내측 패널에 매칭 → 1-based K 반환.
+        /// 가로 위치만 비교하므로 X·Z 평면 거리만 사용(Y=종방향 깊이는 무시).
+        /// 패널 정보가 없으면 1로 폴백.
+        /// </summary>
+        private int FindPanelK(List<List<XYZ>> panels, XYZ p)
+        {
+            if (panels == null || panels.Count == 0 || p == null) return 1;
+            int bestK = 1;
+            double best = double.MaxValue;
+            for (int i = 0; i < panels.Count; i++)
+            {
+                foreach (var q in panels[i])
+                {
+                    double dx = q.X - p.X;
+                    double dz = q.Z - p.Z;
+                    double d = dx * dx + dz * dz;
+                    if (d < best) { best = d; bestK = i + 1; }
+                }
+            }
+            return bestK;
         }
 
         /// <summary>

@@ -275,9 +275,9 @@ namespace RevitRebarModeler.Models
                     ws.Cell(r, 3).Value = row.DiameterLabel;
                     ws.Cell(r, 3).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-                    // D, E 모두 Revit 실측 (같은 값으로 표시)
                     ws.Cell(r, 4).Value = row.TotalLengthMm / 1000.0;     // 전체 철근 길이 (m)
-                    ws.Cell(r, 5).Value = row.TotalLengthMm / 1000.0;     // 철근 길이 (m) — 동일 값
+                    // 철근 길이(한 본): 전단은 깊이별 편차가 커서 "최소 ~ 최대"(m), 그 외는 한 본 단일값
+                    ws.Cell(r, 5).Value = row.UnitLengthText;
                     ws.Cell(r, 6).Value = row.Count;                       // 수량
 
                     if (row.OneMPerCount > 0) ws.Cell(r, 7).Value = row.OneMPerCount;
@@ -385,9 +385,10 @@ namespace RevitRebarModeler.Models
                         ws.Cell(r, 4).Value = row.DiameterLabel;
                         ws.Cell(r, 4).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-                        ws.Cell(r, 5).Value = row.TotalLengthMm / 1000.0;  // 철근 길이
+                        // 철근 길이(한 본): 전단은 "최소 ~ 최대"(m), 그 외는 한 본 단일값
+                        ws.Cell(r, 5).Value = row.UnitLengthText;
                         ws.Cell(r, 6).Value = row.Count;                   // 수량
-                        ws.Cell(r, 7).Value = row.TotalLengthMm / 1000.0;  // 전체 철근 길이 (같은 값)
+                        ws.Cell(r, 7).Value = row.TotalLengthMm / 1000.0;  // 전체 철근 길이
 
                         if (row.OneMPerCount > 0) ws.Cell(r, 8).Value = row.OneMPerCount;
                         if (row.TotalLengthPerMm > 0) ws.Cell(r, 9).Value = row.TotalLengthPerMm / 1000.0;

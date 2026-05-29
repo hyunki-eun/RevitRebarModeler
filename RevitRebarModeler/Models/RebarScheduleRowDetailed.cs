@@ -26,6 +26,8 @@ namespace RevitRebarModeler.Models
 
         public int Count { get; set; }            // 내부 계산용 (출력 시 제거)
         public double UnitLengthMm { get; set; }  // E = 철근 길이 (한 본 평균)
+        public double MinLengthMm { get; set; }   // 전단: 그룹 내 최소 한 본 길이
+        public double MaxLengthMm { get; set; }   // 전단: 그룹 내 최대 한 본 길이
         public double TotalLengthMm { get; set; } // G = 전체 철근 길이 = UnitLengthMm × Count
 
         public double OneMPerCount { get; set; }      // H = 1m당 철근개수 = 1000/CTC (횡만, 그 외 0)
@@ -44,6 +46,15 @@ namespace RevitRebarModeler.Models
         // 미리보기 그리드용 m 단위 변환
         public double TotalLengthM => TotalLengthMm / 1000.0;
         public double TotalLengthPerMmInM => TotalLengthPerMm / 1000.0;
+
+        /// <summary>전단철근은 그룹 내 한 본 길이 편차가 크므로 "최소 ~ 최대"(m)로 표기.
+        /// 그 외(횡/종)는 한 본 평균 단일값(m). (편차 1mm 이하면 단일값)</summary>
+        public bool HasLengthRange =>
+            Kind == RebarKind.Shear && (MaxLengthMm - MinLengthMm) > 1.0;
+        public string UnitLengthText =>
+            HasLengthRange
+                ? $"{MinLengthMm / 1000.0:0.000} ~ {MaxLengthMm / 1000.0:0.000}"
+                : $"{UnitLengthMm / 1000.0:0.000}";
 
         // "TYPE1" 라벨 (구조도(N) → TYPEN)
         public string TypeLabel

@@ -23,10 +23,12 @@ namespace RevitRebarModeler.Models
 
         private static readonly Regex TransRegex =
             new Regex(@"^(구조도\(\d+\))_(\d+)단_(inner|outer)_(\d+)$");
+        // (_SD\d+)? — 봉강 등급 suffix (SD400/500). SD300은 suffix 없음 → 호환.
         private static readonly Regex LongiRegex =
-            new Regex(@"^(구조도\(\d+\))_longi_(outer|inner)_(\d+)단$");
+            new Regex(@"^(구조도\(\d+\))_longi_(outer|inner)_(\d+)단(_SD\d+)?$");
+        // (?:_P(\d+))? — 가로 위치(좌=1·중=2·우=3) suffix. 구버전 마크(P 없음)도 매칭.
         private static readonly Regex ShearRegex =
-            new Regex(@"^(구조도\(\d+\))_shear_종(\d+)_횡(\d+)-(\d+)_(A|B)$");
+            new Regex(@"^(구조도\(\d+\))_shear_종(\d+)_횡(\d+)-(\d+)_(A|B)(?:_P(\d+))?$");
 
         public class CollectStats
         {
@@ -182,7 +184,7 @@ namespace RevitRebarModeler.Models
         /// 그룹화:
         ///   - 횡: (구조도 × Cycle × sideLabel × K) → 마크 "A{i}" (CY1) / "A{i}-1" (CY2)
         ///   - 종: (구조도) → 마크 "B1"
-        ///   - 전단: (구조도 × 횡묶음 S-E) → 마크 "T{i}"
+        ///   - 전단: (구조도 × 가로위치 좌/중/우) → 마크 "T{K}" (좌=T1·중=T2·우=T3)
         /// </summary>
         public static List<RebarScheduleRowDetailed> CollectDetailed(
             Document doc, double surchargePercent,
@@ -203,9 +205,9 @@ namespace RevitRebarModeler.Models
             // 종: (sk, dia) → 길이 리스트
             var longiGroups = new Dictionary<(string sk, int dia), List<double>>();
             var longiBarTypes = new Dictionary<(string sk, int dia), RebarBarType>();
-            // 전단: (sk, bundle) → 길이 리스트
-            var shearGroups = new Dictionary<(string sk, string bundle), List<double>>();
-            var shearBarTypes = new Dictionary<(string sk, string bundle), RebarBarType>();
+            // 전단: (sk, panelK) → 길이 리스트  (panelK = 가로 위치 좌=1·중=2·우=3)
+            var shearGroups = new Dictionary<(string sk, int panelK), List<double>>();
+            var shearBarTypes = new Dictionary<(string sk, int panelK), RebarBarType>();
 
             foreach (var rebar in allRebars)
             {
@@ -247,8 +249,11 @@ namespace RevitRebarModeler.Models
                 if (m.Success)
                 {
                     string sk = m.Groups[1].Value;
-                    string bundle = $"{m.Groups[3].Value}-{m.Groups[4].Value}";
-                    var key = (sk, bundle);
+                    // 가로 위치 K = _P{K} (없으면 구버전 호환: 묶음 시작 k)
+                    int panelK = m.Groups[6].Success
+                        ? int.Parse(m.Groups[6].Value)
+                        : int.Parse(m.Groups[3].Value);
+                    var key = (sk, panelK);
                     if (!shearGroups.ContainsKey(key)) shearGroups[key] = new List<double>();
                     shearGroups[key].Add(lenMm);
                     shearBarTypes[key] = barType;
@@ -308,17 +313,18 @@ namespace RevitRebarModeler.Models
                 }
             }
 
-            // ── 전단 ──: 구조도당 묶음별로 T1, T2, T3...
+            // ── 전단 ──: T 인덱스 = 가로 위치(좌=1·중=2·우=3). 같은 가로 위치의 전단철근은
+            //               깊이·묶음과 무관하게 모두 같은 T로 묶임 → 항상 T1·T2·T3만 생성.
             var shearByStruct = shearGroups
                 .GroupBy(g => g.Key.sk)
                 .OrderBy(g => StructureSortKey(g.Key));
+
             foreach (var sg in shearByStruct)
             {
-                var ordered = sg.OrderBy(x => x.Key.bundle).ToList();
-                int idx = 1;
+                var ordered = sg.OrderBy(x => x.Key.panelK).ToList();
                 foreach (var entry in ordered)
                 {
-                    var (sk, bundle) = entry.Key;
+                    var (sk, panelK) = entry.Key;
                     var lens = entry.Value;
                     var barType = shearBarTypes[entry.Key];
                     int dia = ParseDiameterFromBarType(barType);
@@ -327,8 +333,8 @@ namespace RevitRebarModeler.Models
                         string lbl = $"D{dia}";
                         if (!stats.UnknownDiameters.Contains(lbl)) stats.UnknownDiameters.Add(lbl);
                     }
-                    result.Add(BuildShearRow(sk, idx, dia, bundle, lens, surchargePercent));
-                    idx++;
+
+                    result.Add(BuildShearRow(sk, panelK, dia, $"P{panelK}", lens, surchargePercent));
                 }
             }
 
@@ -425,6 +431,9 @@ namespace RevitRebarModeler.Models
                 DiameterLabel = $"H{dia}_전단철근",
                 Count = count,
                 UnitLengthMm = avgLen,
+                // 전단철근은 깊이별로 길이가 달라짐 → 일람표에 "최소 ~ 최대"로 표기
+                MinLengthMm = count > 0 ? lens.Min() : avgLen,
+                MaxLengthMm = count > 0 ? lens.Max() : avgLen,
                 TotalLengthMm = totalLenMm,
                 OneMPerCount = 0,
                 TotalLengthPerMm = 0,

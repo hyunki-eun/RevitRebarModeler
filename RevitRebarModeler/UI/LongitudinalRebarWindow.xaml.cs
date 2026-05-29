@@ -36,6 +36,11 @@ namespace RevitRebarModeler.UI
             "D10", "D13", "D16", "D19", "D22", "D25", "D29", "D32", "D38"
         };
 
+        public ObservableCollection<string> GradeOptions { get; } = new ObservableCollection<string>
+        {
+            "디바 (SD300)", "하이바 (SD400)", "슈퍼바 (SD500)"
+        };
+
         public LongitudinalRebarWindow(Autodesk.Revit.DB.Document doc)
         {
             _doc = doc;
@@ -372,7 +377,8 @@ namespace RevitRebarModeler.UI
                     Count = item.Count,
                     DiameterLabel = item.DiameterLabel,
                     DiameterMm = ParseDiameter(item.DiameterLabel),
-                    OffsetMm = item.OffsetMm
+                    OffsetMm = item.OffsetMm,
+                    Grade = item.Grade
                 };
             }
 
@@ -630,6 +636,12 @@ namespace RevitRebarModeler.UI
         public string SheetKey { get; set; }
         public int InnerPolylineCount { get; set; }
         public int OuterPolylineCount { get; set; }
+
+        /// <summary>
+        /// 일람표2/3 마크 라벨 예상값. 종방향은 구조도당 직경 1개가 일반적이라 "B1".
+        /// 향후 다직경 지원 시 "B1~B{n}" 형태로 확장 가능.
+        /// </summary>
+        public string MarkLabelDisplay => "B1";
         public double InnerArcLenMm { get; set; }
         public double OuterArcLenMm { get; set; }
         public double AvgTransDiameterMm { get; set; }
@@ -727,6 +739,15 @@ namespace RevitRebarModeler.UI
 
         private int _count = 10;
         public int Count { get => _count; set { if (_count != value) { _count = value; Notify(nameof(Count)); Revalidate(); } } }
+
+        // 봉강 등급: "디바 (SD300)" / "하이바 (SD400)" / "슈퍼바 (SD500)" 라벨로 보관.
+        // 실제 Mark suffix는 ParseGradeCode로 추출 (SD300/SD400/SD500).
+        private string _grade = "디바 (SD300)";
+        public string Grade
+        {
+            get => _grade;
+            set { if (_grade != value) { _grade = value; Notify(nameof(Grade)); } }
+        }
 
         private string _statusText;
         public string StatusText { get => _statusText; private set { if (_statusText != value) { _statusText = value; Notify(nameof(StatusText)); } } }
@@ -830,5 +851,32 @@ namespace RevitRebarModeler.UI
         public string DiameterLabel { get; set; }
         public double DiameterMm { get; set; }
         public double OffsetMm { get; set; }
+
+        /// <summary>봉강 등급 라벨. 예: "디바 (SD300)", "하이바 (SD400)", "슈퍼바 (SD500)".</summary>
+        public string Grade { get; set; } = "디바 (SD300)";
+
+        /// <summary>
+        /// Grade에서 SD### 코드 추출. SD300이면 기존 Mark 형식 유지(빈 문자열),
+        /// SD400/SD500이면 Mark suffix "_SD400" / "_SD500" 사용.
+        /// </summary>
+        public string GradeCode
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(Grade)) return "SD300";
+                var m = System.Text.RegularExpressions.Regex.Match(Grade, @"SD(\d+)");
+                return m.Success ? "SD" + m.Groups[1].Value : "SD300";
+            }
+        }
+
+        /// <summary>SD300이면 빈 문자열, SD400/500이면 "_SD400"/"_SD500".</summary>
+        public string MarkGradeSuffix
+        {
+            get
+            {
+                string code = GradeCode;
+                return code == "SD300" ? "" : "_" + code;
+            }
+        }
     }
 }

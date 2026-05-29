@@ -315,6 +315,9 @@ namespace RevitRebarModeler.Commands
                 tr.Commit();
             }
 
+            // 배치 직후 A/B/T 마크 라벨 즉시 기록 (수량 일람표 없이도 라벨 표시)
+            try { RebarSchedulePopulator.StampLabels(commandData.Application.Application, doc); } catch { }
+
             // 세션 캐시에 CTC 맵 저장 → 전단철근 배치 시 재사용 (파일 재오픈 후 Revit 역파싱으로도 복원 가능)
             SessionCache.TransverseCtcMap = new System.Collections.Generic.Dictionary<string, double>(sheetCtcMap);
 

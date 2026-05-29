@@ -168,7 +168,7 @@
                         <DataGridTextColumn Header="전체 철근 길이(m)"
                                             Binding="{Binding TotalLengthM, StringFormat=#\,##0.000}" Width="115" IsReadOnly="True"/>
                         <DataGridTextColumn Header="철근 길이(m)"
-                                            Binding="{Binding TotalLengthM, StringFormat=#\,##0.000}" Width="100" IsReadOnly="True"/>
+                                            Binding="{Binding UnitLengthText}" Width="100" IsReadOnly="True"/>
                         <DataGridTextColumn Header="수량"
                                             Binding="{Binding Count}" Width="60" IsReadOnly="True"/>
                         <DataGridTextColumn Header="1m당 개수 ✎"
@@ -202,7 +202,7 @@
                         <DataGridTextColumn Header="일람표 마크" Binding="{Binding MarkLabel}" Width="90" IsReadOnly="True"/>
                         <DataGridTextColumn Header="유형" Binding="{Binding DiameterLabel}" Width="100" IsReadOnly="True"/>
                         <DataGridTextColumn Header="철근 길이(m)"
-                                            Binding="{Binding TotalLengthM, StringFormat=#\,##0.000}" Width="100" IsReadOnly="True"/>
+                                            Binding="{Binding UnitLengthText}" Width="100" IsReadOnly="True"/>
                         <DataGridTextColumn Header="수량"
                                             Binding="{Binding Count}" Width="60" IsReadOnly="True"/>
                         <DataGridTextColumn Header="전체 철근 길이(m)"

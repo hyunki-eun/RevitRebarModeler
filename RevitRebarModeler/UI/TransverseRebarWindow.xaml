@@ -100,6 +100,86 @@
         <StackPanel Grid.Row="0" Margin="0,0,0,12">
             <TextBlock Text="횡방향 철근 배치" FontSize="18" FontWeight="Bold" Foreground="#1E293B"/>
             <TextBlock Text="JSON의 TransverseRebars를 구조도별 Host에 자동 매칭하여 배치합니다." FontSize="12" Foreground="#64748B" Margin="0,4,0,0"/>
+
+            <!-- 일람표 마크 규칙 다이어그램 -->
+            <Border Background="#F8FAFC" CornerRadius="6" Padding="12" Margin="0,8,0,0"
+                    BorderBrush="#E2E8F0" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock Text="일람표 마크 규칙 (A 시리즈)" FontSize="11" FontWeight="SemiBold"
+                               Foreground="#475569" Margin="0,0,0,4"/>
+                    <TextBlock Text="구조도별로 inner → outer 순서, k 인덱스 오름차순으로 A1, A2, A3 … 부여. Cycle 2는 -1 suffix 추가."
+                               FontSize="10" Foreground="#94A3B8" Margin="0,0,0,8"/>
+
+                    <Grid Height="90">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="80"/>   <!-- 왼쪽 레이블 -->
+                            <ColumnDefinition Width="*"/>    <!-- 다이어그램 영역 -->
+                        </Grid.ColumnDefinitions>
+
+                        <!-- 좌측 행 레이블 -->
+                        <Grid Grid.Column="0">
+                            <TextBlock Text="외측 (Outer)" FontSize="10" FontWeight="SemiBold" Foreground="#1E293B"
+                                       VerticalAlignment="Top" Margin="0,16,0,0"/>
+                            <TextBlock Text="내측 (Inner)" FontSize="10" FontWeight="SemiBold" Foreground="#1E293B"
+                                       VerticalAlignment="Bottom" Margin="0,0,0,12"/>
+                        </Grid>
+
+                        <!-- 점 + 라벨 그리드 -->
+                        <Grid Grid.Column="1">
+                            <!-- 외측 라인 + 점 (k=1,2,3) → A4, A5, A6 -->
+                            <Line X1="20" Y1="22" X2="430" Y2="22" Stroke="#94A3B8" StrokeThickness="2"/>
+
+                            <Ellipse Width="11" Height="11" Fill="#EF4444"
+                                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="60,17,0,0"/>
+                            <TextBlock Text="A4" FontSize="11" FontWeight="Bold" Foreground="#B91C1C"
+                                       HorizontalAlignment="Left" VerticalAlignment="Top" Margin="58,1,0,0"/>
+
+                            <Ellipse Width="11" Height="11" Fill="#EF4444"
+                                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="200,17,0,0"/>
+                            <TextBlock Text="A5" FontSize="11" FontWeight="Bold" Foreground="#B91C1C"
+                                       HorizontalAlignment="Left" VerticalAlignment="Top" Margin="198,1,0,0"/>
+
+                            <Ellipse Width="11" Height="11" Fill="#EF4444"
+                                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="340,17,0,0"/>
+                            <TextBlock Text="A6" FontSize="11" FontWeight="Bold" Foreground="#B91C1C"
+                                       HorizontalAlignment="Left" VerticalAlignment="Top" Margin="338,1,0,0"/>
+
+                            <!-- 내측 라인 + 점 (k=1,2,3) → A1, A2, A3 -->
+                            <Line X1="20" Y1="68" X2="430" Y2="68" Stroke="#94A3B8" StrokeThickness="2"/>
+
+                            <Ellipse Width="11" Height="11" Fill="#3B82F6"
+                                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="60,63,0,0"/>
+                            <TextBlock Text="A1" FontSize="11" FontWeight="Bold" Foreground="#1D4ED8"
+                                       HorizontalAlignment="Left" VerticalAlignment="Top" Margin="58,76,0,0"/>
+
+                            <Ellipse Width="11" Height="11" Fill="#3B82F6"
+                                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="200,63,0,0"/>
+                            <TextBlock Text="A2" FontSize="11" FontWeight="Bold" Foreground="#1D4ED8"
+                                       HorizontalAlignment="Left" VerticalAlignment="Top" Margin="198,76,0,0"/>
+
+                            <Ellipse Width="11" Height="11" Fill="#3B82F6"
+                                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="340,63,0,0"/>
+                            <TextBlock Text="A3" FontSize="11" FontWeight="Bold" Foreground="#1D4ED8"
+                                       HorizontalAlignment="Left" VerticalAlignment="Top" Margin="338,76,0,0"/>
+
+                            <!-- k 인덱스 표시 (왼쪽부터 1→ 3) -->
+                            <TextBlock Text="k=1" FontSize="9" Foreground="#94A3B8" FontStyle="Italic"
+                                       HorizontalAlignment="Left" VerticalAlignment="Center" Margin="48,0,0,0"/>
+                            <TextBlock Text="k=2" FontSize="9" Foreground="#94A3B8" FontStyle="Italic"
+                                       HorizontalAlignment="Left" VerticalAlignment="Center" Margin="188,0,0,0"/>
+                            <TextBlock Text="k=3" FontSize="9" Foreground="#94A3B8" FontStyle="Italic"
+                                       HorizontalAlignment="Left" VerticalAlignment="Center" Margin="328,0,0,0"/>
+                        </Grid>
+                    </Grid>
+
+                    <TextBlock FontSize="10" Foreground="#64748B" Margin="0,4,0,0">
+                        <Run Text="● " Foreground="#3B82F6"/><Run Text="내측 먼저 " FontWeight="SemiBold"/>
+                        <Run Text="(A1→A2→A3)  →  "/>
+                        <Run Text="● " Foreground="#EF4444"/><Run Text="외측 " FontWeight="SemiBold"/>
+                        <Run Text="(A4→A5→A6)  |  2Cycle: A1-1, A2-1, A3-1, A4-1, A5-1, A6-1"/>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
         </StackPanel>
 
         <!-- 세션 JSON 경로 표시 (작게) -->
@@ -135,6 +215,7 @@
                                                                 <ColumnDefinition Width="Auto"/>
                                                                 <ColumnDefinition Width="Auto"/>
                                                                 <ColumnDefinition Width="Auto"/>
+                                                                <ColumnDefinition Width="Auto"/>
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock Grid.Column="0" Text="{Binding Name}"
                                                                        FontWeight="Bold" FontSize="13" Foreground="#1E293B"
@@ -148,21 +229,32 @@
                                                                 <Run Text="  · 합계 "/>
                                                                 <Run Text="{Binding ItemCount, Mode=OneWay}" FontWeight="SemiBold"/>
                                                                 <Run Text="개"/>
+                                                                <Run Text="  · 마크 " Foreground="#64748B"/>
+                                                                <Run Text="{Binding Items[0].SheetMarkRangeDisplay, Mode=OneWay, FallbackValue=—}"
+                                                                     FontWeight="SemiBold" Foreground="#7C3AED"/>
                                                             </TextBlock>
-                                                            <TextBlock Grid.Column="2" Text="CTC (mm):" VerticalAlignment="Center"
-                                                                       Foreground="#475569" FontSize="11" Margin="8,0,4,0"/>
-                                                            <TextBox Grid.Column="3"
+                                                            <!-- 구조물 두께 (구조물 생성에서 설정한 depth, 읽기 전용) -->
+                                                            <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="11"
+                                                                       Margin="8,0,12,0"
+                                                                       ToolTip="구조물 생성 시 호스트에 저장된 돌출 깊이 (편집은 구조물 생성에서)">
+                                                                <Run Text="두께 " Foreground="#475569"/>
+                                                                <Run Text="{Binding Items[0].SheetDepthDisplay, Mode=OneWay, FallbackValue=—}"
+                                                                     FontWeight="SemiBold" Foreground="#0F766E"/>
+                                                            </TextBlock>
+                                                            <TextBlock Grid.Column="3" Text="CTC (mm):" VerticalAlignment="Center"
+                                                                       Foreground="#475569" FontSize="11" Margin="0,0,4,0"/>
+                                                            <TextBox Grid.Column="4"
                                                                      Text="{Binding Items[0].SheetCtcMm, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, FallbackValue=200}"
                                                                      Width="60" Height="22" VerticalContentAlignment="Center"
                                                                      HorizontalContentAlignment="Center" Margin="0,0,12,0"/>
-                                                            <TextBlock Grid.Column="4" VerticalAlignment="Center"
+                                                            <TextBlock Grid.Column="5" VerticalAlignment="Center"
                                                                        Foreground="#2563EB" FontSize="11" FontWeight="SemiBold">
                                                                 <Run Text="선택 "/>
                                                                 <Run Text="{Binding Items[0].SheetSelectedCount, Mode=OneWay, FallbackValue=0}"/>
                                                                 <Run Text="/"/>
                                                                 <Run Text="{Binding ItemCount, Mode=OneWay}"/>
                                                             </TextBlock>
-                                                            <StackPanel Grid.Column="5" Orientation="Horizontal" Margin="12,0,0,0">
+                                                            <StackPanel Grid.Column="6" Orientation="Horizontal" Margin="12,0,0,0">
                                                                 <Button Content="✓ 전체" Style="{StaticResource SecBtn}"
                                                                         Tag="{Binding Name}" Click="BtnSheetSelectAll_Click"
                                                                         Padding="6,2" FontSize="10" Margin="0,0,4,0"/>

@@ -495,6 +495,8 @@ namespace RevitRebarModeler.Commands
                     // Step 7: 실제 생성 진행 (노이즈 필터 제거됨 — 모든 후보 그대로 배치)
                     // 단(段) 번호 부여: 호길이 시작점부터의 거리(ArcLen) 작은 순으로 1단, 2단, ...
                     var orderedCandidates = candidates.OrderBy(c => c.ArcLen).ToList();
+                    // SD300=빈, SD400="_SD400", SD500="_SD500" — 일람표 정규식이 optional 매칭하도록 처리됨
+                    string gradeSuffix = setting.MarkGradeSuffix ?? "";
                     for (int i = 0; i < orderedCandidates.Count; i++)
                     {
                         var cand = orderedCandidates[i];
@@ -502,7 +504,7 @@ namespace RevitRebarModeler.Commands
 
                         // 실제 외측 철근 배치
                         if (TryCreateRebar(doc, cand.OutPt, depthFt, barType, hostElement,
-                            $"{structureKey}_longi_outer_{dan}단", out string mOut, out string eOut))
+                            $"{structureKey}_longi_outer_{dan}단{gradeSuffix}", out string mOut, out string eOut))
                         {
                             created++; sheetCreated++;
                             if (mOut.StartsWith("Standard")) createdStandard++;
@@ -518,7 +520,7 @@ namespace RevitRebarModeler.Commands
 
                         // 실제 내측 철근 배치
                         if (TryCreateRebar(doc, cand.InPt, depthFt, barType, hostElement,
-                            $"{structureKey}_longi_inner_{dan}단", out string mIn, out string eIn))
+                            $"{structureKey}_longi_inner_{dan}단{gradeSuffix}", out string mIn, out string eIn))
                         {
                             created++; sheetCreated++;
                             if (mIn.StartsWith("Standard")) createdStandard++;
@@ -612,6 +614,9 @@ namespace RevitRebarModeler.Commands
                 try { Models.RebarColorHelper.ApplyToAll3DViews(doc); } catch { }
                 tr.Commit();
             }
+
+            // 배치 직후 A/B/T 마크 라벨 즉시 기록 (수량 일람표 없이도 라벨 표시)
+            try { RebarSchedulePopulator.StampLabels(commandData.Application.Application, doc); } catch { }
 
             // 세션 캐시에 종방향 설정 저장 → 전단철근 배치 시 재사용 (파일 재오픈 후 Revit 역파싱으로도 복원 가능)
             SessionCache.LongitudinalSettings = new System.Collections.Generic.Dictionary<string, UI.LongitudinalSheetSetting>(sheetSettings);

@@ -19,10 +19,11 @@ namespace RevitRebarModeler.Models
 
         private static readonly Regex TransRegex =
             new Regex(@"^(구조도\(\d+\))_(\d+)단_(inner|outer)_(\d+)$");
+        // (_SD\d+)? — 봉강 등급 suffix (SD400/500). SD300은 suffix 없음 → 호환.
         private static readonly Regex LongiRegex =
-            new Regex(@"^(구조도\(\d+\))_longi_(outer|inner)_(\d+)단$");
+            new Regex(@"^(구조도\(\d+\))_longi_(outer|inner)_(\d+)단(_SD\d+)?$");
         private static readonly Regex ShearRegex =
-            new Regex(@"^(구조도\(\d+\))_shear_종(\d+)_횡(\d+)-(\d+)_(A|B)$");
+            new Regex(@"^(구조도\(\d+\))_shear_종(\d+)_횡(\d+)-(\d+)_(A|B)(?:_P(\d+))?$");
         private static readonly Regex StructureNumRegex = new Regex(@"구조도\((\d+)\)");
 
         /// <summary>
@@ -105,6 +106,7 @@ namespace RevitRebarModeler.Models
                 SetInt(rebar, RebarScheduleParameters.Names.M_MarkIndex, row.MarkIndex);
                 SetInt(rebar, RebarScheduleParameters.Names.M_Count, row.Count);
                 SetDouble(rebar, RebarScheduleParameters.Names.M_UnitLengthMm, row.UnitLengthMm);
+                SetString(rebar, RebarScheduleParameters.Names.M_UnitLengthText, row.UnitLengthText);
                 SetDouble(rebar, RebarScheduleParameters.Names.M_TotalLengthM, row.TotalLengthMm / 1000.0);
                 SetDouble(rebar, RebarScheduleParameters.Names.M_OneMPerCount, row.OneMPerCount);
                 SetDouble(rebar, RebarScheduleParameters.Names.M_TotalLengthPerM, row.TotalLengthPerMm / 1000.0);
@@ -116,6 +118,66 @@ namespace RevitRebarModeler.Models
                 written++;
             }
             return written;
+        }
+
+        /// <summary>
+        /// 라벨 전용 기록: 배치 직후 호출용. 수량/중량은 건드리지 않고
+        /// Type · 마크라벨(A/B/T) · 서브그룹 · 정렬키 · 마크인덱스만 채운다.
+        /// (수량·중량 집계는 수량 일람표 생성 시 PopulateDetailed 가 채움)
+        /// </summary>
+        public static int PopulateLabelsOnly(Document doc, List<RebarScheduleRowDetailed> rowsDetailed)
+        {
+            if (rowsDetailed == null || rowsDetailed.Count == 0) return 0;
+
+            var bySource = rowsDetailed
+                .Where(r => !string.IsNullOrEmpty(r.SourceKey))
+                .GroupBy(r => r.SourceKey)
+                .ToDictionary(g => g.Key, g => g.First());
+
+            var allRebars = new FilteredElementCollector(doc)
+                .OfClass(typeof(Rebar)).Cast<Rebar>().ToList();
+
+            int written = 0;
+            foreach (var rebar in allRebars)
+            {
+                string srcKey = BuildSourceKeyFromRebar(rebar, doc);
+                if (srcKey == null) continue;
+                if (!bySource.TryGetValue(srcKey, out var row)) continue;
+
+                SetString(rebar, RebarScheduleParameters.Names.Type, ToTypeLabel(row.StructureKey));
+                SetString(rebar, RebarScheduleParameters.Names.M_MarkLabel, row.MarkLabel);
+                SetString(rebar, RebarScheduleParameters.Names.M_SubGroup, row.SubGroupLabel);
+                SetString(rebar, RebarScheduleParameters.Names.M_SortKey2, BuildSortKey2(row));
+                SetInt(rebar, RebarScheduleParameters.Names.M_MarkIndex, row.MarkIndex);
+                written++;
+            }
+            return written;
+        }
+
+        /// <summary>
+        /// 배치 명령 끝에서 호출. 현재 모델의 모든 Rebar에 A/B/T 마크 라벨을 즉시 기록.
+        /// 자체 트랜잭션으로 Shared Parameter 바인딩까지 처리(없으면 생성). 실패는 조용히 무시.
+        /// 수량·중량 집계는 별도 [수량 일람표] 명령에서 생성된다.
+        /// </summary>
+        public static void StampLabels(Autodesk.Revit.ApplicationServices.Application app, Document doc)
+        {
+            if (app == null || doc == null) return;
+            using (var tr = new Transaction(doc, "마크 라벨 기록"))
+            {
+                try
+                {
+                    tr.Start();
+                    RebarScheduleParameters.EnsureBound(app, doc);
+                    // 라벨은 CTC·할증과 무관 → ctcMap=null, surcharge=0 으로 충분
+                    var rows = RebarScheduleCollector.CollectDetailed(doc, 0, null, out _);
+                    PopulateLabelsOnly(doc, rows);
+                    tr.Commit();
+                }
+                catch
+                {
+                    if (tr.HasStarted() && !tr.HasEnded()) tr.RollBack();
+                }
+            }
         }
 
         // 일람표2 마크 인터리브 정렬용 키.
@@ -131,10 +193,11 @@ namespace RevitRebarModeler.Models
         // Rebar → Detailed Row 룩업 키. Collector의 SourceKey와 동일 포맷이어야 함.
         private static readonly Regex TransRegexExtract =
             new Regex(@"^(구조도\(\d+\))_(\d+)단_(inner|outer)_(\d+)$");
+        // (_SD\d+)? — 봉강 등급 suffix (SD400/500). SD300은 suffix 없음 → 호환.
         private static readonly Regex LongiRegexExtract =
-            new Regex(@"^(구조도\(\d+\))_longi_(outer|inner)_(\d+)단$");
+            new Regex(@"^(구조도\(\d+\))_longi_(outer|inner)_(\d+)단(_SD\d+)?$");
         private static readonly Regex ShearRegexExtract =
-            new Regex(@"^(구조도\(\d+\))_shear_종(\d+)_횡(\d+)-(\d+)_(A|B)$");
+            new Regex(@"^(구조도\(\d+\))_shear_종(\d+)_횡(\d+)-(\d+)_(A|B)(?:_P(\d+))?$");
 
         private static string BuildSourceKeyFromRebar(Rebar rebar, Document doc)
         {
@@ -161,8 +224,11 @@ namespace RevitRebarModeler.Models
             if ((m = ShearRegexExtract.Match(mark)).Success)
             {
                 string sk = m.Groups[1].Value;
-                string bundle = $"{m.Groups[3].Value}-{m.Groups[4].Value}";
-                return $"S:{sk}|{bundle}";
+                // 가로 위치 K = _P{K} (없으면 구버전 호환: 묶음 시작 k) — 수집기와 동일 규칙
+                int panelK = m.Groups[6].Success
+                    ? int.Parse(m.Groups[6].Value)
+                    : int.Parse(m.Groups[3].Value);
+                return $"S:{sk}|P{panelK}";
             }
             return null;
         }

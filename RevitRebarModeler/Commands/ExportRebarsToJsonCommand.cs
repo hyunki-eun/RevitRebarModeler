@@ -20,7 +20,7 @@ namespace RevitRebarModeler.Commands
     /// 분류:
     ///   - 종방향(longi):   구조도(N)_longi_(outer|inner)_M단
     ///   - 횡방향(trans):   구조도(N)_M단_(inner|outer)_K
-    ///   - 전단(shear):     구조도(N)_shear_종N_횡A-B_(A|B)
+    ///   - 전단(shear):     구조도(N)_shear_종N_횡A-B_(A|B)_P{K}  (K=가로위치 좌1·중2·우3)
     ///   - 기타(unknown):   매칭 안 되는 Mark
     /// 좌표는 Revit world (mm). 비교/검증용.
     /// </summary>
@@ -67,9 +67,10 @@ namespace RevitRebarModeler.Commands
                 }
             }
 
-            var longiRegex = new Regex(@"^(구조도\(\d+\))_longi_(outer|inner)_(\d+)단$");
+            // (_SD\d+)? — 봉강 등급 suffix (SD400/500). SD300은 suffix 없음 → 호환.
+            var longiRegex = new Regex(@"^(구조도\(\d+\))_longi_(outer|inner)_(\d+)단(_SD\d+)?$");
             var transRegex = new Regex(@"^(구조도\(\d+\))_(\d+)단_(inner|outer)_(\d+)$");
-            var shearRegex = new Regex(@"^(구조도\(\d+\))_shear_종(\d+)_횡(\d+)-(\d+)_(A|B)$");
+            var shearRegex = new Regex(@"^(구조도\(\d+\))_shear_종(\d+)_횡(\d+)-(\d+)_(A|B)(?:_P(\d+))?$");
 
             var longis = new List<object>();
             var transes = new List<object>();
@@ -118,6 +119,7 @@ namespace RevitRebarModeler.Commands
                         bundleStart = int.Parse(m.Groups[3].Value),
                         bundleEnd = int.Parse(m.Groups[4].Value),
                         bundleGroup = m.Groups[5].Value,
+                        panelK = m.Groups[6].Success ? int.Parse(m.Groups[6].Value) : 0, // 가로 위치(좌/중/우)
                         diameterMm = diaMm,
                         curves
                     });

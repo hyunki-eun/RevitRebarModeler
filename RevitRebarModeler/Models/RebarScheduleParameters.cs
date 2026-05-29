@@ -37,7 +37,8 @@ namespace RevitRebarModeler.Models
             public const string M_SortKey2 = "RBR_M_SortKey2";                // 일람표2 마크 인터리브 정렬용
             public const string M_MarkIndex = "RBR_M_MarkIndex";              // 1-based
             public const string M_Count = "RBR_M_Count";                      // 마크 본수
-            public const string M_UnitLengthMm = "RBR_M_UnitLengthMm";        // 한 본 평균
+            public const string M_UnitLengthMm = "RBR_M_UnitLengthMm";        // 한 본 평균 (숫자, 내부보관)
+            public const string M_UnitLengthText = "RBR_M_UnitLengthText";    // 철근 길이 표시(m): 전단=최소~최대, 그외=단일
             public const string M_TotalLengthM = "RBR_M_TotalLengthM";        // 전체 철근 길이(m) = avg × count / 1000
             public const string M_OneMPerCount = "RBR_M_OneMPerCount";        // 1m당 철근개수 (횡만)
             public const string M_TotalLengthPerM = "RBR_M_TotalLengthPerM";  // 철근 총길이(m, 1m라이닝당)
@@ -67,6 +68,7 @@ namespace RevitRebarModeler.Models
                 { Names.M_DiameterLabel, "유형" },
                 { Names.M_Count, "수량" },
                 { Names.M_UnitLengthMm, "철근 길이(mm)" },
+                { Names.M_UnitLengthText, "철근 길이(m)" },
                 { Names.M_TotalLengthM, "전체 철근 길이(m)" },
                 { Names.M_OneMPerCount, "1m당 철근개수" },
                 { Names.M_TotalLengthPerM, "철근 총길이(m)" },
@@ -97,6 +99,7 @@ namespace RevitRebarModeler.Models
             Names.Type,
             Names.M_MarkLabel,
             Names.M_DiameterLabel,
+            Names.M_UnitLengthText,
             Names.M_TotalLengthM,
             Names.M_Count,
             Names.M_OneMPerCount,
@@ -114,7 +117,7 @@ namespace RevitRebarModeler.Models
             Names.M_SubGroup,
             Names.M_MarkLabel,
             Names.M_DiameterLabel,
-            Names.M_UnitLengthMm,
+            Names.M_UnitLengthText,
             Names.M_Count,
             Names.M_TotalLengthM,
             Names.M_OneMPerCount,
@@ -173,6 +176,7 @@ namespace RevitRebarModeler.Models
             EnsureParam(grp, Names.M_MarkIndex, SpecTypeId.Int.Integer, catSet, doc, app);
             EnsureParam(grp, Names.M_Count, SpecTypeId.Int.Integer, catSet, doc, app);
             EnsureParam(grp, Names.M_UnitLengthMm, SpecTypeId.Number, catSet, doc, app);
+            EnsureParam(grp, Names.M_UnitLengthText, SpecTypeId.String.Text, catSet, doc, app);
             EnsureParam(grp, Names.M_TotalLengthM, SpecTypeId.Number, catSet, doc, app);
             EnsureParam(grp, Names.M_OneMPerCount, SpecTypeId.Number, catSet, doc, app);
             EnsureParam(grp, Names.M_TotalLengthPerM, SpecTypeId.Number, catSet, doc, app);

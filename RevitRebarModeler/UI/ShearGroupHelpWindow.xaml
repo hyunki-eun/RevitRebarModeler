@@ -1,0 +1,90 @@
+<Window x:Class="RevitRebarModeler.UI.ShearGroupHelpWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="전단철근 묶음(A/B) 도움말" Width="900" Height="640"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
+        Background="#F5F5F5" FontFamily="맑은 고딕">
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 헤더 + 설명 -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,14">
+            <TextBlock Text="전단철근 묶음(A/B) 배치 규칙"
+                       FontSize="17" FontWeight="Bold" Foreground="#1E293B"/>
+            <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" FontSize="12" Foreground="#475569" LineHeight="20">
+                <Run Text="• 횡방향 단을 [묶음 수]개씩 분할하며, 한 단씩 겹쳐서 다음 묶음으로 진행합니다." />
+                <LineBreak/>
+                <Run Text="  예) 묶음 수=3, 횡방향 10단 → [1-3] [3-5] [5-7] [7-9]"/>
+                <LineBreak/>
+                <Run Text="• 분할된 묶음에 [시작 묶음]부터 교대로 A → B → A → B ... 를 할당합니다." FontWeight="SemiBold" Foreground="#1E293B"/>
+                <LineBreak/>
+                <Run Text="• A묶음/B묶음의 차이는 시작 라벨만 다르며, 배치 자체는 동일합니다."/>
+            </TextBlock>
+        </StackPanel>
+
+        <!-- 두 다이어그램 -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 시작 묶음 A -->
+            <Border Grid.Column="0" BorderBrush="#94A3B8" BorderThickness="1" Margin="0,0,8,0"
+                    Background="White" CornerRadius="6">
+                <DockPanel LastChildFill="True">
+                    <Border DockPanel.Dock="Top" Background="#DBEAFE" CornerRadius="6,6,0,0">
+                        <StackPanel Margin="12,8">
+                            <TextBlock Text="시작 묶음 = A"
+                                       FontWeight="Bold" FontSize="14" Foreground="#1E40AF"
+                                       HorizontalAlignment="Center"/>
+                            <TextBlock Text="[1-3]=A, [3-5]=B, [5-7]=A, [7-9]=B ..."
+                                       FontSize="11" Foreground="#3B82F6"
+                                       HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Border>
+                    <Canvas x:Name="CnvA" Background="#F8FAFC"/>
+                </DockPanel>
+            </Border>
+
+            <!-- 시작 묶음 B -->
+            <Border Grid.Column="1" BorderBrush="#94A3B8" BorderThickness="1" Margin="8,0,0,0"
+                    Background="White" CornerRadius="6">
+                <DockPanel LastChildFill="True">
+                    <Border DockPanel.Dock="Top" Background="#DCFCE7" CornerRadius="6,6,0,0">
+                        <StackPanel Margin="12,8">
+                            <TextBlock Text="시작 묶음 = B"
+                                       FontWeight="Bold" FontSize="14" Foreground="#15803D"
+                                       HorizontalAlignment="Center"/>
+                            <TextBlock Text="[1-3]=B, [3-5]=A, [5-7]=B, [7-9]=A ..."
+                                       FontSize="11" Foreground="#22C55E"
+                                       HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Border>
+                    <Canvas x:Name="CnvB" Background="#F8FAFC"/>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- 범례 -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,0" HorizontalAlignment="Center">
+            <Ellipse Width="8" Height="8" Fill="#64748B" VerticalAlignment="Center" Margin="0,0,4,0"/>
+            <TextBlock Text="횡철근(원본 위치)" FontSize="11" Foreground="#475569" Margin="0,0,18,0" VerticalAlignment="Center"/>
+            <Rectangle Width="14" Height="10" Fill="#3B82F6" VerticalAlignment="Center" Margin="0,0,4,0"/>
+            <TextBlock Text="A묶음" FontSize="11" Foreground="#475569" Margin="0,0,18,0" VerticalAlignment="Center"/>
+            <Rectangle Width="14" Height="10" Fill="#22C55E" VerticalAlignment="Center" Margin="0,0,4,0"/>
+            <TextBlock Text="B묶음" FontSize="11" Foreground="#475569" Margin="0,0,18,0" VerticalAlignment="Center"/>
+            <TextBlock Text="(괄호 = U자형 전단철근 1개)" FontSize="11" Foreground="#94A3B8" FontStyle="Italic" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- 닫기 -->
+        <Button Grid.Row="3" Content="닫기" HorizontalAlignment="Right" Margin="0,16,0,0"
+                Width="90" Height="32" IsCancel="True" Background="#E2E8F0" BorderThickness="0" Cursor="Hand"/>
+    </Grid>
+</Window>

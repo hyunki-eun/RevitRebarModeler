@@ -170,8 +170,9 @@ namespace RevitRebarModeler.UI
                     .Cast<Autodesk.Revit.DB.Structure.Rebar>()
                     .ToList();
 
-                // 종방향: Mark = 구조도(N)_longi_(outer|inner)_M단 → 구조도별 max(M)
-                var longiRegex = new Regex(@"^(구조도\(\d+\))_longi_(outer|inner)_(\d+)단$");
+                // 종방향: Mark = 구조도(N)_longi_(outer|inner)_M단[_SD###] → 구조도별 max(M)
+                // (_SD\d+)? — 봉강 등급 suffix (SD400/500). SD300은 suffix 없음 → 호환.
+                var longiRegex = new Regex(@"^(구조도\(\d+\))_longi_(outer|inner)_(\d+)단(_SD\d+)?$");
                 // 횡방향: Mark = 구조도(N)_M단_(inner|outer)_K → 구조도별 (M, Z 평균) 모음
                 var transRegex = new Regex(@"^(구조도\(\d+\))_(\d+)단_(inner|outer)_(\d+)$");
 
@@ -340,6 +341,12 @@ namespace RevitRebarModeler.UI
             var m = Regex.Match(label, @"\d+");
             return m.Success ? double.Parse(m.Value) : 13;
         }
+
+        private void BtnHelpGroup_Click(object sender, RoutedEventArgs e)
+        {
+            var help = new ShearGroupHelpWindow { Owner = this };
+            help.ShowDialog();
+        }
     }
 
     public enum ShearStartGroup { A, B }
@@ -366,7 +373,7 @@ namespace RevitRebarModeler.UI
         public int GroupSize
         {
             get => _groupSize;
-            set { if (_groupSize != value) { _groupSize = value; Notify(nameof(GroupSize)); Notify(nameof(GroupPreview)); Revalidate(); } }
+            set { if (_groupSize != value) { _groupSize = value; Notify(nameof(GroupSize)); Notify(nameof(GroupPreview)); Notify(nameof(MarkRangeDisplay)); Revalidate(); } }
         }
 
         private string _startGroup = "A";
@@ -424,6 +431,21 @@ namespace RevitRebarModeler.UI
                 int leftover = total - lastEndCovered;
                 string leftoverText = leftover > 0 ? $"  마지막 {leftover}단 미배치" : "";
                 return string.Join(" ", parts) + leftoverText;
+            }
+        }
+
+        /// <summary>
+        /// 일람표2/3 마크 라벨 예상값. T 인덱스 = 가로 위치(좌=T1·중=T2·우=T3).
+        /// 깊이·묶음과 무관하게 가로 위치 개수(=내측 횡철근 폴리라인 수)만큼만 생성.
+        /// 내측 폴리라인 수 = 횡철근 폴리라인 수 / 2.
+        /// </summary>
+        public string MarkRangeDisplay
+        {
+            get
+            {
+                int panels = TransRebarCount / 2; // 내측 = 앞 절반 (좌/중/우 …)
+                if (panels <= 0) return "—";
+                return string.Join(", ", Enumerable.Range(1, panels).Select(k => $"T{k}"));
             }
         }
 
