@@ -74,7 +74,13 @@ namespace RevitRebarModeler.Models
         public int CycleNumber { get; set; }
         public List<RebarSegment> Segments { get; set; } = new List<RebarSegment>();
         public double DiameterMm { get; set; }
+        public double SpacingMm { get; set; }
         public string MatchedText { get; set; }
+        public string DiameterLabel { get; set; }
+        public double CtcMm { get; set; }
+        /// <summary>시트(구조도)별 설계 패턴명. 예: "A~C패턴", "WL-1~2패턴", "P-3패턴".
+        /// 일람표 "해설" 컬럼에 기존 해설과 함께 표시됨.</summary>
+        public string PatternName { get; set; }
         public string Layer { get; set; }
         public double CenterX { get; set; }
         public double CenterY { get; set; }

@@ -186,10 +186,45 @@ namespace RevitRebarModeler.Models
         ///   - 종: (구조도) → 마크 "B1"
         ///   - 전단: (구조도 × 가로위치 좌/중/우) → 마크 "T{K}" (좌=T1·중=T2·우=T3)
         /// </summary>
+        /// <summary>
+        /// 로드된 JSON에서 (구조도(N) → PatternName) 맵을 구성한다.
+        /// 일람표 "해설" 컬럼에 시트별 패턴명을 함께 표기하기 위함.
+        /// PatternName이 비었거나 SheetId에서 구조도 번호를 못 뽑으면 스킵(맵 미수록).
+        /// </summary>
+        public static Dictionary<string, string> BuildPatternMap(CivilExportData data)
+        {
+            var map = new Dictionary<string, string>();
+            if (data?.TransverseRebars == null) return map;
+            foreach (var r in data.TransverseRebars)
+            {
+                if (r == null || string.IsNullOrWhiteSpace(r.PatternName)) continue;
+                string sk = ExtractStructureKey(r.SheetId);
+                if (string.IsNullOrEmpty(sk)) continue;
+                if (!map.ContainsKey(sk)) map[sk] = r.PatternName.Trim();
+            }
+            return map;
+        }
+
+        // "콘크리트 라이닝 구조도(1)_STA..." → "구조도(1)"
+        private static string ExtractStructureKey(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+            var m = Regex.Match(text, @"구조도\(\d+\)");
+            return m.Success ? m.Value : "";
+        }
+
+        // 해설 = "{PatternName} / {기존 해설}" (패턴 없으면 기존 해설 그대로)
+        private static string WithPattern(string patternName, string baseLabel)
+            => string.IsNullOrWhiteSpace(patternName) ? baseLabel : $"{patternName} / {baseLabel}";
+
+        private static string ResolvePattern(Dictionary<string, string> map, string sk)
+            => (map != null && sk != null && map.TryGetValue(sk, out var p)) ? p : null;
+
         public static List<RebarScheduleRowDetailed> CollectDetailed(
             Document doc, double surchargePercent,
             Dictionary<string, double> transverseCtcMap,
-            out CollectStats stats)
+            out CollectStats stats,
+            Dictionary<string, string> patternNameMap = null)
         {
             stats = new CollectStats();
             var result = new List<RebarScheduleRowDetailed>();
@@ -286,7 +321,7 @@ namespace RevitRebarModeler.Models
                         if (!stats.UnknownDiameters.Contains(lbl)) stats.UnknownDiameters.Add(lbl);
                     }
                     result.Add(BuildTransRow(sk, cycle, idx, side, k, dia, lens,
-                        transverseCtcMap, surchargePercent));
+                        transverseCtcMap, surchargePercent, ResolvePattern(patternNameMap, sk)));
                     idx++;
                 }
             }
@@ -308,7 +343,8 @@ namespace RevitRebarModeler.Models
                         string lbl = $"D{dia}";
                         if (!stats.UnknownDiameters.Contains(lbl)) stats.UnknownDiameters.Add(lbl);
                     }
-                    result.Add(BuildLongiRow(sk, idx, dia, lens, surchargePercent));
+                    result.Add(BuildLongiRow(sk, idx, dia, lens, surchargePercent,
+                        ResolvePattern(patternNameMap, sk)));
                     idx++;
                 }
             }
@@ -334,7 +370,8 @@ namespace RevitRebarModeler.Models
                         if (!stats.UnknownDiameters.Contains(lbl)) stats.UnknownDiameters.Add(lbl);
                     }
 
-                    result.Add(BuildShearRow(sk, panelK, dia, $"P{panelK}", lens, surchargePercent));
+                    result.Add(BuildShearRow(sk, panelK, dia, $"P{panelK}", lens, surchargePercent,
+                        ResolvePattern(patternNameMap, sk)));
                 }
             }
 
@@ -343,7 +380,7 @@ namespace RevitRebarModeler.Models
 
         private static RebarScheduleRowDetailed BuildTransRow(
             string sk, int cycle, int markIdx, string side, int k, int dia, List<double> lens,
-            Dictionary<string, double> transverseCtcMap, double surchargePercent)
+            Dictionary<string, double> transverseCtcMap, double surchargePercent, string patternName)
         {
             double avgLen = lens.Average();
             int count = lens.Count;
@@ -364,7 +401,7 @@ namespace RevitRebarModeler.Models
                 CycleNumber = cycle,
                 MarkIndex = markIdx,
                 MarkLabel = cycle == 1 ? $"A{markIdx}" : $"A{markIdx}-1",
-                SubGroupLabel = $"{typeLabel}_CY{cycle}",
+                SubGroupLabel = WithPattern(patternName, $"{typeLabel}_CY{cycle}"),
                 SourceKey = $"T:{sk}|{cycle}|{side}|{k}",
                 DiameterMm = dia,
                 DiameterLabel = $"H{dia}",
@@ -381,7 +418,7 @@ namespace RevitRebarModeler.Models
         }
 
         private static RebarScheduleRowDetailed BuildLongiRow(
-            string sk, int markIdx, int dia, List<double> lens, double surchargePercent)
+            string sk, int markIdx, int dia, List<double> lens, double surchargePercent, string patternName)
         {
             double avgLen = lens.Average();
             int count = lens.Count;
@@ -395,7 +432,7 @@ namespace RevitRebarModeler.Models
                 CycleNumber = null,
                 MarkIndex = markIdx,
                 MarkLabel = $"B{markIdx}",
-                SubGroupLabel = "배력철근",
+                SubGroupLabel = WithPattern(patternName, "배력철근"),
                 SourceKey = $"L:{sk}|{dia}",
                 DiameterMm = dia,
                 DiameterLabel = $"H{dia}",
@@ -412,7 +449,7 @@ namespace RevitRebarModeler.Models
         }
 
         private static RebarScheduleRowDetailed BuildShearRow(
-            string sk, int markIdx, int dia, string bundle, List<double> lens, double surchargePercent)
+            string sk, int markIdx, int dia, string bundle, List<double> lens, double surchargePercent, string patternName)
         {
             double avgLen = lens.Average();
             int count = lens.Count;
@@ -425,7 +462,7 @@ namespace RevitRebarModeler.Models
                 CycleNumber = null,
                 MarkIndex = markIdx,
                 MarkLabel = $"T{markIdx}",
-                SubGroupLabel = "전단철근",
+                SubGroupLabel = WithPattern(patternName, "전단철근"),
                 SourceKey = $"S:{sk}|{bundle}",
                 DiameterMm = dia,
                 DiameterLabel = $"H{dia}_전단철근",

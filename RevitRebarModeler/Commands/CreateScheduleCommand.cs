@@ -36,10 +36,14 @@ namespace RevitRebarModeler.Commands
                 doc, defaultSurcharge,
                 SessionCache.TransverseCtcMap,
                 out var stats);
+            // 해설 컬럼에 시트별 PatternName을 함께 표기하기 위해 (구조도 → 패턴) 맵 구성.
+            // JSON 미로드 세션이면 맵이 비어 기존 해설만 표기됨(그레이스풀 폴백).
+            var patternMap = RebarScheduleCollector.BuildPatternMap(SessionCache.LoadedJson);
             var rowsDetailed = RebarScheduleCollector.CollectDetailed(
                 doc, defaultSurcharge,
                 SessionCache.TransverseCtcMap,
-                out _);
+                out _,
+                patternMap);
 
             if (rows.Count == 0)
             {

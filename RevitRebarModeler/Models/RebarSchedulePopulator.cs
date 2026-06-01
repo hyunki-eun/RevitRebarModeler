@@ -168,8 +168,10 @@ namespace RevitRebarModeler.Models
                 {
                     tr.Start();
                     RebarScheduleParameters.EnsureBound(app, doc);
-                    // 라벨은 CTC·할증과 무관 → ctcMap=null, surcharge=0 으로 충분
-                    var rows = RebarScheduleCollector.CollectDetailed(doc, 0, null, out _);
+                    // 라벨은 CTC·할증과 무관 → ctcMap=null, surcharge=0 으로 충분.
+                    // 해설은 일람표와 동일하게 PatternName을 결합하기 위해 패턴 맵 전달.
+                    var patternMap = RebarScheduleCollector.BuildPatternMap(SessionCache.LoadedJson);
+                    var rows = RebarScheduleCollector.CollectDetailed(doc, 0, null, out _, patternMap);
                     PopulateLabelsOnly(doc, rows);
                     tr.Commit();
                 }
