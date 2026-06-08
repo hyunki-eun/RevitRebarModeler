@@ -214,7 +214,7 @@ namespace RevitRebarModeler.Commands
                     }
                     debugLog.Add($"  {structureKey}: barType={barType.Name}");
                     double depthMm = ParseDepthFromHost(hostElement);
-                    if (depthMm <= 0) depthMm = 1000;
+                    if (depthMm <= 0) depthMm = DefaultDepthMm;
 
                     // 90도 + 100mm 후크 타입 확보 (없으면 생성). barType별 1회.
                     var hookType = EnsureHookType90(doc, GetBarDiameterFt(barType), 100.0);
@@ -876,7 +876,10 @@ namespace RevitRebarModeler.Commands
         private RebarHookType EnsureHookType90(Document doc, double barDiameterFt, double targetTangentLengthMm = 100.0)
         {
             double targetTangentFt = targetTangentLengthMm * MmToFt;
-            double multiplier = (barDiameterFt > 1e-9) ? targetTangentFt / barDiameterFt : 7.6923;
+            // 후크 접선 길이 = 직경 × multiplier. 직경이 0(미상)이면 D13(13mm) 기준 폴백:
+            //   100mm / 13mm ≈ 7.6923  → 기본 접선 100mm에 해당.
+            const double FallbackHookMultiplierD13 = 100.0 / 13.0;
+            double multiplier = (barDiameterFt > 1e-9) ? targetTangentFt / barDiameterFt : FallbackHookMultiplierD13;
             string targetName = $"Hook_90_{targetTangentLengthMm:F0}mm_D{Math.Round(barDiameterFt / MmToFt)}";
 
             var all = new FilteredElementCollector(doc)

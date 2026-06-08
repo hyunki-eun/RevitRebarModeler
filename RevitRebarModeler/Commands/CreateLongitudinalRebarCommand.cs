@@ -109,7 +109,7 @@ namespace RevitRebarModeler.Commands
                     }
 
                     double depthMm = ParseDepthFromHost(hostElement);
-                    if (depthMm <= 0) depthMm = 1000;
+                    if (depthMm <= 0) depthMm = DefaultDepthMm;
                     double depthFt = depthMm * MmToFt;
 
                     RebarBarType barType = FindRebarBarType(doc, setting.DiameterMm, preferStirrup: false);

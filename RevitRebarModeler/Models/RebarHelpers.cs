@@ -21,6 +21,9 @@ namespace RevitRebarModeler.Models
         /// <summary>feet → mm.</summary>
         public const double FtToMm = 304.8;
 
+        /// <summary>호스트 Comments에서 depth를 못 읽었을 때 쓰는 기본 구조물 두께(mm).</summary>
+        public const double DefaultDepthMm = 1000.0;
+
         // 구조도 키 추출용 정규식 (재컴파일 방지)
         private static readonly Regex StructureKeyRegex = new Regex(@"구조도\(\d+\)", RegexOptions.Compiled);
         private static readonly Regex StructureKeyNumRegex = new Regex(@"구조도\((\d+)\)", RegexOptions.Compiled);

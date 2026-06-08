@@ -70,11 +70,11 @@ namespace RevitRebarModeler.Commands
                     string structureKey = sheetGroup.Key;
                     var sheetRebars = sheetGroup.ToList();
 
-                    double depthMm = 1000;
+                    double depthMm = DefaultDepthMm;
                     if (hostMap.TryGetValue(structureKey, out Element hostElement))
                     {
                         depthMm = ParseDepthFromHost(hostElement);
-                        if (depthMm <= 0) depthMm = 1000;
+                        if (depthMm <= 0) depthMm = DefaultDepthMm;
                     }
 
                     double ctcMm = sheetCtcMap.ContainsKey(structureKey)
