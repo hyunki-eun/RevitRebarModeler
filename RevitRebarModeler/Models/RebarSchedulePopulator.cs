@@ -227,7 +227,7 @@ namespace RevitRebarModeler.Models
             {
                 string sk = m.Groups[1].Value;
                 string side = m.Groups[3].Value;
-                int k = int.Parse(m.Groups[4].Value);
+                if (!int.TryParse(m.Groups[4].Value, out int k)) return null;
                 int cycle = ParseCycleFromComments(rebar);
                 return $"T:{sk}|{cycle}|{side}|{k}";
             }
@@ -243,9 +243,8 @@ namespace RevitRebarModeler.Models
             {
                 string sk = m.Groups[1].Value;
                 // 가로 위치 K = _P{K} (없으면 구버전 호환: 묶음 시작 k) — 수집기와 동일 규칙
-                int panelK = m.Groups[6].Success
-                    ? int.Parse(m.Groups[6].Value)
-                    : int.Parse(m.Groups[3].Value);
+                string panelRaw = m.Groups[6].Success ? m.Groups[6].Value : m.Groups[3].Value;
+                if (!int.TryParse(panelRaw, out int panelK)) return null;
                 return $"S:{sk}|P{panelK}";
             }
             return null;

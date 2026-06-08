@@ -236,7 +236,9 @@ namespace RevitRebarModeler.Commands
             string comments = hostElement.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)
                 ?.AsString() ?? "";
             var match = Regex.Match(comments, @"depth=(\d+\.?\d*)");
-            return match.Success ? double.Parse(match.Groups[1].Value) : 0;
+            return match.Success
+                ? double.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)
+                : 0;
         }
 
         private Dictionary<string, Element> BuildHostMap(Document doc)

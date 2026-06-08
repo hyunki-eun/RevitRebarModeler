@@ -438,7 +438,7 @@ namespace RevitRebarModeler.UI
         {
             if (string.IsNullOrEmpty(label)) return 16;
             var m = Regex.Match(label, @"\d+");
-            return m.Success ? double.Parse(m.Value) : 16;
+            return m.Success ? double.Parse(m.Value, System.Globalization.CultureInfo.InvariantCulture) : 16;
         }
 
         // ========================================================================
@@ -734,7 +734,7 @@ namespace RevitRebarModeler.UI
         {
             if (string.IsNullOrEmpty(label)) return 13;
             var m = Regex.Match(label, @"\d+");
-            return m.Success ? double.Parse(m.Value) : 13;
+            return m.Success ? double.Parse(m.Value, System.Globalization.CultureInfo.InvariantCulture) : 13;
         }
 
         private int _count = 10;

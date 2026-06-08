@@ -14,7 +14,7 @@
   - 각 명령이 `CheckOrBlock()`을 수동 호출 → 한 곳만 빠뜨려도 무방비.
   - **개선:** 최근 관측 날짜를 레지스트리/암호화 파일에 high-water mark 저장해 롤백 탐지 / `CommandBase` 추상클래스로 가드 중앙집중(또는 만료 시 리본 버튼 비활성화) / 진짜 보호 필요 시 RSA 서명 라이선스 토큰 + 머신ID.
 
-- [ ] **2. 숫자 파싱 culture 의존 → 비-한국 로케일에서 트랜잭션 중 크래시**
+- [x] **2. 숫자 파싱 culture 의존 → 비-한국 로케일에서 트랜잭션 중 크래시** ✅ depth round-trip(쓰기/읽기 4곳)·UnitLengthText 출력·자동맵/SourceKey 파싱 InvariantCulture 통일 (※ command 내부 일부 int.Parse는 #7 통합 시 정리)
   - `double.Parse`/`int.Parse` culture 기본 오버로드 광범위 사용. `depth=`/Mark는 코드가 직접 쓰고 읽는 값이라 쓰기/읽기 culture 불일치 시 소수점 깨짐 → `FormatException`.
   - 명령부: `Commands/CreateShearRebarCommand.cs:1184` 등 `ParseDepthFromHost` 4곳
   - 일람표: `Models/RebarScheduleRowDetailed.cs:54-57` `UnitLengthText` 현재 culture 문자열화 후 텍스트 셀 기록

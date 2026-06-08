@@ -51,10 +51,12 @@ namespace RevitRebarModeler.Models
         /// 그 외(횡/종)는 한 본 평균 단일값(m). (편차 1mm 이하면 단일값)</summary>
         public bool HasLengthRange =>
             Kind == RebarKind.Shear && (MaxLengthMm - MinLengthMm) > 1.0;
+        // 텍스트 셀에 직접 기록되는 값 → 소수점이 로케일에 따라 ','로 바뀌지 않도록 InvariantCulture 고정
         public string UnitLengthText =>
             HasLengthRange
-                ? $"{MinLengthMm / 1000.0:0.000} ~ {MaxLengthMm / 1000.0:0.000}"
-                : $"{UnitLengthMm / 1000.0:0.000}";
+                ? string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "{0:0.000} ~ {1:0.000}", MinLengthMm / 1000.0, MaxLengthMm / 1000.0)
+                : (UnitLengthMm / 1000.0).ToString("0.000", System.Globalization.CultureInfo.InvariantCulture);
 
         // "TYPE1" 라벨 (구조도(N) → TYPEN)
         public string TypeLabel

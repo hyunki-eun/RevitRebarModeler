@@ -85,8 +85,10 @@ namespace RevitRebarModeler.Commands
                         FamilyInstance instance = doc.Create.NewFamilyInstance(
                             placementPoint, symbol, StructuralType.NonStructural);
 
+                        // depth는 마침표 소수점으로 기록해야 ParseDepthFromHost의 정규식/InvariantCulture 파싱과 round-trip이 맞음
+                        string depthStr = depthMm.ToString(System.Globalization.CultureInfo.InvariantCulture);
                         instance.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)
-                            ?.Set($"{cycle.CycleKey}|depth={depthMm}");
+                            ?.Set($"{cycle.CycleKey}|depth={depthStr}");
 
                         // Structural Framing 카테고리에서는 NewFamilyInstance 점 좌표가 무시되고
                         // (0,0,0)에 배치되는 케이스가 있어, 실제 위치를 보고 명시적으로 이동시킨다.

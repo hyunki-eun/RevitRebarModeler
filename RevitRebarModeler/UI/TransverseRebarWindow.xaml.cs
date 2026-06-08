@@ -70,7 +70,9 @@ namespace RevitRebarModeler.UI
                     string key = ExtractStructureKey(comments);
                     if (string.IsNullOrEmpty(key)) continue;
                     var m = depthRegex.Match(comments);
-                    if (m.Success && double.TryParse(m.Groups[1].Value, out double d) && d > 0)
+                    if (m.Success && double.TryParse(m.Groups[1].Value,
+                            System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out double d) && d > 0)
                     {
                         if (!map.ContainsKey(key)) map[key] = d;
                     }

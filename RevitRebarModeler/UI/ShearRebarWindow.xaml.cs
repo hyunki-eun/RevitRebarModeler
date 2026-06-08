@@ -188,7 +188,7 @@ namespace RevitRebarModeler.UI
                     if (lm.Success)
                     {
                         string sk = lm.Groups[1].Value;
-                        int dan = int.Parse(lm.Groups[3].Value);
+                        if (!int.TryParse(lm.Groups[3].Value, out int dan)) continue;
                         if (!longiMaxByKey.TryGetValue(sk, out int cur) || dan > cur)
                             longiMaxByKey[sk] = dan;
                         continue;
@@ -198,7 +198,7 @@ namespace RevitRebarModeler.UI
                     if (tm.Success)
                     {
                         string sk = tm.Groups[1].Value;
-                        int dan = int.Parse(tm.Groups[2].Value);
+                        if (!int.TryParse(tm.Groups[2].Value, out int dan)) continue;
 
                         // 횡방향 max 단 번호 추적
                         if (!transMaxByKey.TryGetValue(sk, out int curMax) || dan > curMax)
@@ -293,7 +293,9 @@ namespace RevitRebarModeler.UI
                     string key = ExtractStructureKey(comments);
                     if (string.IsNullOrEmpty(key)) continue;
                     var m = depthRegex.Match(comments);
-                    if (m.Success && double.TryParse(m.Groups[1].Value, out double d) && d > 0)
+                    if (m.Success && double.TryParse(m.Groups[1].Value,
+                            System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out double d) && d > 0)
                     {
                         if (!_depthMap.ContainsKey(key)) _depthMap[key] = d;
                     }
@@ -339,7 +341,7 @@ namespace RevitRebarModeler.UI
         {
             if (string.IsNullOrEmpty(label)) return 13;
             var m = Regex.Match(label, @"\d+");
-            return m.Success ? double.Parse(m.Value) : 13;
+            return m.Success ? double.Parse(m.Value, System.Globalization.CultureInfo.InvariantCulture) : 13;
         }
 
         private void BtnHelpGroup_Click(object sender, RoutedEventArgs e)
