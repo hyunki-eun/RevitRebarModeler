@@ -25,13 +25,12 @@ namespace RevitRebarModeler.Commands
     /// 좌표는 Revit world (mm). 비교/검증용.
     /// </summary>
     [Transaction(TransactionMode.ReadOnly)]
-    public class ExportRebarsToJsonCommand : IExternalCommand
+    public class ExportRebarsToJsonCommand : CommandBase
     {
         private const double FtToMm = 304.8;
 
-        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        protected override Result Run(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            if (!LicenseGuard.CheckOrBlock()) return Result.Cancelled;
 
             var uidoc = commandData.Application.ActiveUIDocument;
             var doc = uidoc.Document;

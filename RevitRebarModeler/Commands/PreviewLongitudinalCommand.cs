@@ -17,13 +17,12 @@ namespace RevitRebarModeler.Commands
     /// DirectShape로 Revit 뷰에 렌더링하여 배치 위치를 사전 검증.
     /// </summary>
     [Transaction(TransactionMode.Manual)]
-    public class PreviewLongitudinalCommand : IExternalCommand
+    public class PreviewLongitudinalCommand : CommandBase
     {
         // MmToFt 상수는 RebarHelpers.MmToFt 사용 (using static)
 
-        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        protected override Result Run(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            if (!LicenseGuard.CheckOrBlock()) return Result.Cancelled;
 
             var doc = commandData.Application.ActiveUIDocument.Document;
 

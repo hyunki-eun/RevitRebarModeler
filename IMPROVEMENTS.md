@@ -8,7 +8,7 @@
 
 ## 🔴 Critical — 동작/배포에 직접 영향
 
-- [ ] **1. 라이선스 가드 시계 롤백 우회** — `Models/LicenseGuard.cs:16`
+- [x] **1. 라이선스 가드 시계 롤백 우회** — `Models/LicenseGuard.cs` ✅ UTC 기준 + HKCU 레지스트리 high-water-mark(난독화)로 시계 롤백 탐지 + 신설 `Commands/CommandBase.cs`로 가드 중앙집중(9개 명령 Execute→Run 전환). ※ Revit 실모델에서 롤백/만료 동작 직접 검증 권장.
   - `DateTime.Now.Date > ExpirationDate` 단순 비교 → 윈도우 시계를 되돌리면 무제한 사용.
   - `DateTime.Now`(로컬) → `DateTime.UtcNow` 권장.
   - 각 명령이 `CheckOrBlock()`을 수동 호출 → 한 곳만 빠뜨려도 무방비.

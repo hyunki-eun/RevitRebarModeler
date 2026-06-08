@@ -35,13 +35,12 @@ namespace RevitRebarModeler.Commands
     /// - 후크 = 사각형 양쪽 변 끝에서 외측 방향으로 짧게 돌출 (HookLengthMm)
     /// </summary>
     [Transaction(TransactionMode.Manual)]
-    public class CreateShearRebarCommand : IExternalCommand
+    public class CreateShearRebarCommand : CommandBase
     {
         // MmToFt 상수는 RebarHelpers.MmToFt 사용 (using static)
 
-        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        protected override Result Run(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            if (!LicenseGuard.CheckOrBlock()) return Result.Cancelled;
 
             var doc = commandData.Application.ActiveUIDocument.Document;
 

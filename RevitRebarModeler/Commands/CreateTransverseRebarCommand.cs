@@ -15,13 +15,12 @@ using static RevitRebarModeler.Models.RebarHelpers;
 namespace RevitRebarModeler.Commands
 {
     [Transaction(TransactionMode.Manual)]
-    public class CreateTransverseRebarCommand : IExternalCommand
+    public class CreateTransverseRebarCommand : CommandBase
     {
         // MmToFt 상수는 RebarHelpers.MmToFt 사용 (using static)
 
-        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        protected override Result Run(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            if (!LicenseGuard.CheckOrBlock()) return Result.Cancelled;
 
             // 디버그 플래그는 호출 단위 지역 상태로 유지 (IExternalCommand 인스턴스 재사용 시 누적 방지)
             bool _verboseDebug = false;   // 개발 시 true, 사용자 배포 시 false

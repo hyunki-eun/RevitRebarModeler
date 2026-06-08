@@ -17,13 +17,12 @@ namespace RevitRebarModeler.Commands
     /// GlobalOrigin 기준 DWG 절대좌표로 배치 (구조물과 동일 공간)
     /// </summary>
     [Transaction(TransactionMode.Manual)]
-    public class PreviewRebarCurvesCommand : IExternalCommand
+    public class PreviewRebarCurvesCommand : CommandBase
     {
         // MmToFt 상수는 RebarHelpers.MmToFt 사용 (using static)
 
-        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        protected override Result Run(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            if (!LicenseGuard.CheckOrBlock()) return Result.Cancelled;
 
             var doc = commandData.Application.ActiveUIDocument.Document;
 

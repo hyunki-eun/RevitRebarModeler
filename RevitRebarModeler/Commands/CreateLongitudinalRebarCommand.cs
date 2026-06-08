@@ -15,13 +15,12 @@ using static RevitRebarModeler.Models.RebarHelpers;
 namespace RevitRebarModeler.Commands
 {
     [Transaction(TransactionMode.Manual)]
-    public class CreateLongitudinalRebarCommand : IExternalCommand
+    public class CreateLongitudinalRebarCommand : CommandBase
     {
         // MmToFt 상수는 RebarHelpers.MmToFt 사용 (using static)
 
-        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        protected override Result Run(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            if (!LicenseGuard.CheckOrBlock()) return Result.Cancelled;
 
             var doc = commandData.Application.ActiveUIDocument.Document;
 

@@ -13,11 +13,10 @@ using RevitRebarModeler.Models;
 namespace RevitRebarModeler.Commands
 {
     [Transaction(TransactionMode.Manual)]
-    public class CreateStructureCommand : IExternalCommand
+    public class CreateStructureCommand : CommandBase
     {
-        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        protected override Result Run(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            if (!LicenseGuard.CheckOrBlock()) return Result.Cancelled;
 
             var uiApp = commandData.Application;
             var app = uiApp.Application;

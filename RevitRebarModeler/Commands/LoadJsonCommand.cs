@@ -18,11 +18,10 @@ namespace RevitRebarModeler.Commands
     /// 이후 모든 Window/Command는 SessionCache.LoadedJson 만 읽고, 재선택은 이 명령으로만.
     /// </summary>
     [Transaction(TransactionMode.Manual)]
-    public class LoadJsonCommand : IExternalCommand
+    public class LoadJsonCommand : CommandBase
     {
-        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        protected override Result Run(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            if (!LicenseGuard.CheckOrBlock()) return Result.Cancelled;
 
             var dlg = new OpenFileDialog
             {
