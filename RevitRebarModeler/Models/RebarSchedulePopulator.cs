@@ -75,15 +75,34 @@ namespace RevitRebarModeler.Models
         /// 일람표2/3용 Detailed 행을 각 Rebar의 RBR_M_* 파라미터에 채워 넣음.
         /// Detailed Row의 SourceKey와 Rebar의 Mark/Comments에서 재구성한 키를 일치시켜 룩업.
         /// </summary>
+        /// <summary>
+        /// SourceKey → row 맵 구성. 같은 SourceKey가 둘 이상이면 첫 행만 채택하되,
+        /// 충돌을 조용히 버리지 않고 진단 로그로 남긴다(데이터 손실 가시화).
+        /// </summary>
+        private static Dictionary<string, RebarScheduleRowDetailed> BuildSourceMap(
+            List<RebarScheduleRowDetailed> rowsDetailed, string caller)
+        {
+            var map = new Dictionary<string, RebarScheduleRowDetailed>();
+            foreach (var r in rowsDetailed)
+            {
+                if (string.IsNullOrEmpty(r.SourceKey)) continue;
+                if (map.ContainsKey(r.SourceKey))
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[RebarSchedulePopulator.{caller}] SourceKey 중복 — 무시됨: '{r.SourceKey}' (마크 {r.MarkLabel})");
+                    continue;
+                }
+                map[r.SourceKey] = r;
+            }
+            return map;
+        }
+
         public static int PopulateDetailed(Document doc, List<RebarScheduleRowDetailed> rowsDetailed)
         {
             if (rowsDetailed == null || rowsDetailed.Count == 0) return 0;
 
             // SourceKey → row
-            var bySource = rowsDetailed
-                .Where(r => !string.IsNullOrEmpty(r.SourceKey))
-                .GroupBy(r => r.SourceKey)
-                .ToDictionary(g => g.Key, g => g.First());
+            var bySource = BuildSourceMap(rowsDetailed, nameof(PopulateDetailed));
 
             var allRebars = new FilteredElementCollector(doc)
                 .OfClass(typeof(Rebar)).Cast<Rebar>().ToList();
@@ -129,10 +148,7 @@ namespace RevitRebarModeler.Models
         {
             if (rowsDetailed == null || rowsDetailed.Count == 0) return 0;
 
-            var bySource = rowsDetailed
-                .Where(r => !string.IsNullOrEmpty(r.SourceKey))
-                .GroupBy(r => r.SourceKey)
-                .ToDictionary(g => g.Key, g => g.First());
+            var bySource = BuildSourceMap(rowsDetailed, nameof(PopulateLabelsOnly));
 
             var allRebars = new FilteredElementCollector(doc)
                 .OfClass(typeof(Rebar)).Cast<Rebar>().ToList();

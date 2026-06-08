@@ -163,7 +163,9 @@ namespace RevitRebarModeler.Commands
                 }
 
                 // 횡방향 CTC 맵 (구조도별) — 세션 우선, 없으면 Revit 모델에서 자동 추출
-                var transCtcMap = SessionCache.TransverseCtcMap ?? new Dictionary<string, double>();
+                // 세션 캐시를 직접 변형하지 않도록 복사본을 사용 (자동추출값이 세션을 오염시키는 것 방지)
+                var transCtcMap = new Dictionary<string, double>(
+                    SessionCache.TransverseCtcMap ?? new Dictionary<string, double>());
                 var autoTransCtc = ExtractTransverseCtcFromModel(allRebars);
                 var transDiamMap = ExtractTransverseDiameterFromModel(allRebars, doc);
                 foreach (var kv in autoTransCtc)

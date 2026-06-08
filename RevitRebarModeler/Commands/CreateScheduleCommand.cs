@@ -52,7 +52,9 @@ namespace RevitRebarModeler.Commands
                     $"• 총 Rebar: {stats.TotalRebars}개\n" +
                     $"• Mark 미매칭: {stats.Unmatched}개\n" +
                     $"• 직경 추출 실패: {stats.DiameterUnknown}개\n" +
-                    $"• 길이 0: {stats.LengthZero}개\n\n" +
+                    $"• 길이 0: {stats.LengthZero}개\n" +
+                    $"• 길이 계산 오류: {stats.LengthError}개\n" +
+                    $"• Mark 숫자 파싱 오류: {stats.MarkParseError}개\n\n" +
                     "Mark 패턴이 '구조도(N)_...' 형식이어야 합니다.");
                 return Result.Cancelled;
             }
@@ -128,9 +130,12 @@ namespace RevitRebarModeler.Commands
                 $"  · 총 본수: {rows.Sum(r => r.Count)}개\n" +
                 $"  · 총 중량(할증): {rows.Sum(r => r.WeightWithSurchargeKg):N2} kg";
 
-            if (stats.Unmatched > 0 || stats.DiameterUnknown > 0 || stats.LengthZero > 0)
+            if (stats.Unmatched > 0 || stats.DiameterUnknown > 0 || stats.LengthZero > 0
+                || stats.LengthError > 0 || stats.MarkParseError > 0)
             {
                 msg += $"\n\n  스킵: Mark 미매칭 {stats.Unmatched}, 직경 추출 실패 {stats.DiameterUnknown}, 길이 0 {stats.LengthZero}";
+                if (stats.LengthError > 0) msg += $", 길이 계산 오류 {stats.LengthError}";
+                if (stats.MarkParseError > 0) msg += $", Mark 파싱 오류 {stats.MarkParseError}";
             }
             if (stats.UnknownDiameters.Count > 0)
             {

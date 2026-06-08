@@ -31,12 +31,39 @@ namespace RevitRebarModeler.Models
             List<RebarScheduleRowDetailed> rowsDetailed,
             string projectName = null)
         {
+            // 대상 파일이 Excel 등에서 열려 있으면 먼저 친절한 메시지로 알린다.
+            if (System.IO.File.Exists(filePath) && IsFileLocked(filePath))
+                throw new System.IO.IOException(
+                    $"대상 파일이 다른 프로그램(Excel 등)에서 열려 있어 저장할 수 없습니다.\n파일을 닫고 다시 시도해 주세요.\n\n{filePath}");
+
+            // 임시 파일에 먼저 저장한 뒤 교체(atomic) → 도중 실패해도 기존 파일/반쪽 파일을 남기지 않음.
+            string tempPath = filePath + ".tmp";
             using (var wb = new XLWorkbook())
             {
                 WriteSheet1(wb, rows1, projectName);
                 WriteSheet2(wb, rowsDetailed);
                 WriteSheet3(wb, rowsDetailed);
-                wb.SaveAs(filePath);
+                wb.SaveAs(tempPath);
+            }
+
+            if (System.IO.File.Exists(filePath)) System.IO.File.Delete(filePath);
+            System.IO.File.Move(tempPath, filePath);
+        }
+
+        /// <summary>파일이 다른 프로세스에 의해 잠겨(쓰기 불가) 있는지 검사.</summary>
+        private static bool IsFileLocked(string path)
+        {
+            try
+            {
+                using (System.IO.File.Open(path, System.IO.FileMode.Open,
+                    System.IO.FileAccess.ReadWrite, System.IO.FileShare.None))
+                {
+                    return false;
+                }
+            }
+            catch (System.IO.IOException)
+            {
+                return true;
             }
         }
 

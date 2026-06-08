@@ -36,7 +36,9 @@ namespace RevitRebarModeler.Models
             public int Matched;             // Mark 패턴 매칭된 개수
             public int Unmatched;           // Mark 패턴 매칭 실패 (스킵)
             public int DiameterUnknown;     // BarType 직경 추출 실패
-            public int LengthZero;          // Centerline 길이 0
+            public int LengthZero;          // Centerline 길이 0 (정상적으로 0인 경우)
+            public int LengthError;         // Centerline 길이 계산 중 예외 발생 (집계 누락)
+            public int MarkParseError;      // Mark 정규식은 매칭됐으나 숫자 파싱 실패
             public List<string> UnknownDiameters = new List<string>(); // 룩업표 미수록 직경
         }
 
@@ -95,6 +97,7 @@ namespace RevitRebarModeler.Models
                 if (diameterMm <= 0) { stats.DiameterUnknown++; continue; }
 
                 double lengthMm = ComputeRebarLengthMm(rebar);
+                if (double.IsNaN(lengthMm)) { stats.LengthError++; continue; }
                 if (lengthMm <= 0) { stats.LengthZero++; continue; }
 
                 var key = new GroupKey(structureKey, kind, diameterMm);
@@ -253,6 +256,7 @@ namespace RevitRebarModeler.Models
                 int dia = ParseDiameterFromBarType(barType);
                 if (dia <= 0) { stats.DiameterUnknown++; continue; }
                 double lenMm = ComputeRebarLengthMm(rebar);
+                if (double.IsNaN(lenMm)) { stats.LengthError++; continue; }
                 if (lenMm <= 0) { stats.LengthZero++; continue; }
 
                 Match m = TransRegex.Match(mark);
@@ -260,7 +264,7 @@ namespace RevitRebarModeler.Models
                 {
                     string sk = m.Groups[1].Value;
                     string side = m.Groups[3].Value;
-                    int kIdx = int.Parse(m.Groups[4].Value);
+                    if (!int.TryParse(m.Groups[4].Value, out int kIdx)) { stats.MarkParseError++; continue; }
                     int cycle = ParseCycleFromComments(rebar);
                     var key = (sk, cycle, side, kIdx);
                     if (!transGroups.ContainsKey(key)) transGroups[key] = new List<double>();
@@ -285,9 +289,8 @@ namespace RevitRebarModeler.Models
                 {
                     string sk = m.Groups[1].Value;
                     // 가로 위치 K = _P{K} (없으면 구버전 호환: 묶음 시작 k)
-                    int panelK = m.Groups[6].Success
-                        ? int.Parse(m.Groups[6].Value)
-                        : int.Parse(m.Groups[3].Value);
+                    string panelRaw = m.Groups[6].Success ? m.Groups[6].Value : m.Groups[3].Value;
+                    if (!int.TryParse(panelRaw, out int panelK)) { stats.MarkParseError++; continue; }
                     var key = (sk, panelK);
                     if (!shearGroups.ContainsKey(key)) shearGroups[key] = new List<double>();
                     shearGroups[key].Add(lenMm);
@@ -532,9 +535,12 @@ namespace RevitRebarModeler.Models
                 double totalFt = curves.Sum(c => c.Length);
                 return totalFt * FtToMm;
             }
-            catch
+            catch (Exception ex)
             {
-                return 0;
+                // 예외를 길이 0(정상)과 혼동하지 않도록 NaN 센티넬 반환 → 호출부에서 LengthError 집계
+                System.Diagnostics.Debug.WriteLine(
+                    $"[RebarScheduleCollector] ComputeRebarLengthMm 실패 id={rebar?.Id}: {ex.Message}");
+                return double.NaN;
             }
         }
 

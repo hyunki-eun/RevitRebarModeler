@@ -21,7 +21,7 @@
   - UI: `ShearRebarWindow`/`LongitudinalRebarWindow` regex 그룹 파싱
   - **개선:** 기계 생성/regex 토큰은 전부 `CultureInfo.InvariantCulture` 통일, 사용자 입력은 `TryParse` 방어.
 
-- [ ] **3. `SessionCache.TransverseCtcMap` 제자리 변형(세션 오염)** — `Commands/CreateShearRebarCommand.cs:166-172`
+- [x] **3. `SessionCache.TransverseCtcMap` 제자리 변형(세션 오염)** — `Commands/CreateShearRebarCommand.cs:166-172` ✅ 복사본 사용으로 수정
   - `?? new` 패턴이지만 세션 값 non-null이면 캐시 참조 그 자체를 변형 → 다음 실행 동작 달라짐.
   - **개선:** `new Dictionary<string,double>(SessionCache.TransverseCtcMap ?? new ...)`로 복사.
 
@@ -33,13 +33,13 @@
 
 ## 🟠 Important
 
-- [ ] **5. 일람표/수량의 "조용한 데이터 손실" (수량산출에서 최악)**
+- [x] **5. 일람표/수량의 "조용한 데이터 손실" (수량산출에서 최악)** ✅ LengthError/MarkParseError 통계 추가, NaN 센티넬+TryParse, 중복 SourceKey 로그
   - `Models/RebarScheduleCollector.cs:521-539` `ComputeRebarLengthMm`의 `catch { return 0; }` → 예외 철근이 길이 0으로 집계에서 사라짐(통계 카운터도 안 올림).
   - `Models/RebarScheduleCollector.cs:263,289,290` regex 그룹 `int.Parse`(`\d+` 무제한) → 비정상 Mark에서 `OverflowException`, per-rebar try 없어 전체 일람표 중단.
   - `Models/RebarSchedulePopulator.cs:83-86` `GroupBy(...).g.First()`가 중복 SourceKey 두번째를 경고없이 폐기.
   - **개선:** catch에서 에러 통계+elementId 로그, `int.TryParse`로 교체 후 `Unmatched++` continue.
 
-- [ ] **6. 엑셀 `SaveAs` 예외 처리 없음 → 파일 열려 있으면 크래시** — `Models/ScheduleExcelExporter.cs:28-41`
+- [x] **6. 엑셀 `SaveAs` — 잠금 메시지 + atomic 저장** — `Models/ScheduleExcelExporter.cs:28-41` ✅ (호출부 try/catch는 이미 존재) 잠금 사전감지 + 임시파일 후 이동
   - 대상 파일을 Excel로 열어둔 상태면 `IOException`(실사용 최빈 실패). (참고: ClosedXML 사용이라 COM 누수는 없음, `using` 정상.)
   - **개선:** try/catch로 "파일이 열려 있어 저장 불가" 안내, 임시파일 후 이동.
 
