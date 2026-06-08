@@ -403,6 +403,27 @@ namespace RevitRebarModeler.UI
         }
 
         /// <summary>
+        /// 묶음 그룹 산술의 단일 소스(GroupPreview·Revalidate 공용).
+        /// 횡방향 단 수(TransUnitCount) 기준, 한 단씩 겹쳐(step=g-1) 묶는다.
+        /// 유효하지 않으면 false. leftover = 마지막 묶음이 덮지 못한 끝쪽 단 수.
+        /// </summary>
+        private bool TryComputeGrouping(out int groupCount, out int leftover)
+        {
+            groupCount = 0; leftover = 0;
+            int total = TransUnitCount;
+            int g = _groupSize;
+            if (total <= 0 || g <= 0 || g > total) return false;
+
+            int step = Math.Max(1, g - 1);
+            int count = 0, s = 1;
+            while (s + g - 1 <= total) { count++; s += step; }
+            int lastEndCovered = (count == 0) ? 0 : (1 + (count - 1) * step + g - 1);
+            groupCount = count;
+            leftover = total - lastEndCovered;
+            return true;
+        }
+
+        /// <summary>
         /// 묶음 분할 미리보기 (횡방향 단 수 기준, 한 단씩 겹침).
         /// GroupSize=3, 횡방향 단=10 → "[1-3] [3-5] [5-7] [7-9]"
         /// </summary>
@@ -425,8 +446,7 @@ namespace RevitRebarModeler.UI
                     parts.Add(g == 1 ? $"[{s}]" : $"[{s}-{e}]");
                     s += step;
                 }
-                int lastEndCovered = (parts.Count == 0) ? 0 : (1 + (parts.Count - 1) * step + g - 1);
-                int leftover = total - lastEndCovered;
+                TryComputeGrouping(out _, out int leftover);
                 string leftoverText = leftover > 0 ? $"  마지막 {leftover}단 미배치" : "";
                 return string.Join(" ", parts) + leftoverText;
             }
@@ -466,14 +486,15 @@ namespace RevitRebarModeler.UI
             var msgs = new List<string>();
             int level = 0;
 
+            // 검증은 실제 배치 단위(TransUnitCount + 겹침 묶음)와 동일 기준으로 한다.
+            // (이전엔 참고용 TransRebarCount + modulo 라서 미리보기/배치와 메시지가 어긋났음)
             if (_groupSize <= 0) { msgs.Add("묶음 수>0"); level = Math.Max(level, 2); }
             if (_hookLengthMm < 0) { msgs.Add("후크 ≥0"); level = Math.Max(level, 2); }
             if (TransRebarCount <= 0) { msgs.Add("횡철근 없음"); level = Math.Max(level, 2); }
-            else if (_groupSize > TransRebarCount) { msgs.Add("묶음>횡철근수"); level = Math.Max(level, 1); }
-
-            int leftover = (_groupSize > 0) ? TransRebarCount % _groupSize : 0;
-            if (leftover > 0 && leftover < _groupSize)
-                msgs.Add($"나머지 {leftover}개 미배치");
+            else if (TransUnitCount <= 0) { msgs.Add("depth·CTC 미상"); level = Math.Max(level, 2); }
+            else if (_groupSize > TransUnitCount) { msgs.Add("묶음>횡방향단"); level = Math.Max(level, 1); }
+            else if (TryComputeGrouping(out _, out int leftover) && leftover > 0)
+                msgs.Add($"마지막 {leftover}단 미배치");
 
             if (msgs.Count == 0)
             {

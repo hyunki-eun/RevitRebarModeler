@@ -54,7 +54,7 @@
   - Transverse 명령은 루프 밖(49행)에서 올바르게 호출. Longi만 루프 안 재생성.
   - **개선:** 루프 밖으로 hoist.
 
-- [ ] **10. 전단 UI 검증이 잘못된 필드 기준** — `UI/ShearRebarWindow.xaml.cs:466-490` `Revalidate()`
+- [x] **10. 전단 UI 검증이 잘못된 필드 기준** — `UI/ShearRebarWindow.xaml.cs` `Revalidate()` ✅ 공유 `TryComputeGrouping` 헬퍼 도입, 검증/미리보기 모두 `TransUnitCount`+겹침 묶음 기준으로 일치. (MarkRangeDisplay의 TransRebarCount/2는 가로 위치 개수로 의도된 것이라 유지)
   - `TransRebarCount`(원시 폴리라인 수)+modulo로 검증하나 실제 배치/프리뷰는 `TransUnitCount`(계단수)+겹침 스텝(g-1) 기준 → 메시지가 실제와 모순.
   - **개선:** 그룹 산술을 한 메서드로 묶어 검증/프리뷰/배치 공유.
 
