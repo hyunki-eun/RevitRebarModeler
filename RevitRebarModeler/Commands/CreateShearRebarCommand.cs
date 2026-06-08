@@ -791,6 +791,10 @@ namespace RevitRebarModeler.Commands
             XYZ normal = XYZ.BasisY; // 폴백값; 이하에서 정확한 값으로 교체
             if (TryComputePlane(curves, out _, out _, out XYZ computedNormal))
                 normal = computedNormal;
+            else
+                // 평면 법선 산출 실패(커브 퇴화) → BasisY 사용 시 스터럽이 틀어질 수 있어 기록
+                System.Diagnostics.Debug.WriteLine(
+                    $"[CreateShearRebar] 평면 법선 계산 실패 — BasisY 폴백 사용 (mark={mark})");
 
             // ── 1) CreateFromCurves (StirrupTie + 후크 타입) ──
             try
@@ -982,28 +986,46 @@ namespace RevitRebarModeler.Commands
         /// curves 의 처음 점 + 첫 직선 방향(xDir) + curves 가 놓인 평면 normal 추정.
         /// 모든 curve 가 한 평면 위에 있다고 가정.
         /// </summary>
+        /// <summary>
+        /// U자 커브들이 놓인 평면의 법선을 계산.
+        /// 처음 두 커브가 거의 일직선(예: 시작 다리와 상단바가 평행)이면 법선이 퇴화하므로,
+        /// 모든 커브 방향벡터 쌍 중 외적 크기가 가장 큰(=가장 비평행) 쌍을 골라 안정적으로 산출한다.
+        /// 모든 커브가 평행(완전 퇴화)이면 false.
+        /// </summary>
         private bool TryComputePlane(List<Curve> curves, out XYZ origin, out XYZ xDir, out XYZ normal)
         {
             origin = xDir = normal = null;
             if (curves == null || curves.Count < 2) return false;
 
             origin = curves[0].GetEndPoint(0);
-            XYZ pEnd = curves[0].GetEndPoint(1);
-            XYZ x = (pEnd - origin);
-            if (x.GetLength() < 1e-6) return false;
-            x = x.Normalize();
 
-            // 두 번째 curve 의 진행 방향과 x 의 외적 → normal
-            XYZ pNext = curves[1].GetEndPoint(1);
-            XYZ y = (pNext - pEnd);
-            if (y.GetLength() < 1e-6) return false;
-            y = y.Normalize();
+            // 각 커브의 정규화 방향벡터 수집 (degenerate 제외)
+            var dirs = new List<XYZ>();
+            foreach (var c in curves)
+            {
+                XYZ d = c.GetEndPoint(1) - c.GetEndPoint(0);
+                if (d.GetLength() < 1e-6) continue;
+                dirs.Add(d.Normalize());
+            }
+            if (dirs.Count < 2) return false;
 
-            XYZ n = x.CrossProduct(y);
-            if (n.GetLength() < 1e-6) return false;
+            // 가장 비평행한 두 방향(외적 크기 최대)을 선택 → 퇴화에 강함
+            XYZ bestX = null, bestN = null;
+            double bestLen = 0;
+            for (int i = 0; i < dirs.Count; i++)
+            {
+                for (int j = i + 1; j < dirs.Count; j++)
+                {
+                    XYZ n = dirs[i].CrossProduct(dirs[j]);
+                    double len = n.GetLength();
+                    if (len > bestLen) { bestLen = len; bestX = dirs[i]; bestN = n; }
+                }
+            }
 
-            xDir = x;
-            normal = n.Normalize();
+            if (bestN == null || bestLen < 1e-6) return false; // 모든 커브 평행 → 퇴화
+
+            xDir = bestX;
+            normal = bestN.Normalize();
             return true;
         }
 

@@ -25,7 +25,7 @@
   - `?? new` 패턴이지만 세션 값 non-null이면 캐시 참조 그 자체를 변형 → 다음 실행 동작 달라짐.
   - **개선:** `new Dictionary<string,double>(SessionCache.TransverseCtcMap ?? new ...)`로 복사.
 
-- [ ] **4. 전단철근 평면 법선 fallback이 `XYZ.BasisY` → 스터럽 오배치** — `Commands/CreateShearRebarCommand.cs:1124-1147` `TryComputePlane`
+- [x] **4. 전단철근 평면 법선 fallback이 `XYZ.BasisY` → 스터럽 오배치** — `Commands/CreateShearRebarCommand.cs` `TryComputePlane` ✅ 모든 커브 방향 쌍 중 가장 비평행한 쌍으로 법선 산출(퇴화 강건) + BasisY 폴백 시 진단 로그. ※ Revit 실모델 검증 권장.
   - 시작 다리·상단바가 거의 일직선(ndx≈0)이면 법선 퇴화 → `BasisY` 대체 → 곡선 평면과 비수직 법선으로 `Rebar.CreateFromCurves` 호출돼 스터럽 틀어짐(`vfPlaneBad` 카운터가 이미 감지 중).
   - **개선:** `(pSO-pSI) × (pEO-pSO)` 외적으로 법선 계산, 퇴화 시 fallback 대신 로그 후 실패 처리.
 
