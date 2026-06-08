@@ -70,13 +70,13 @@
 
 ## 🟡 Minor
 
-- [ ] **13. 죽은 코드 정리**
+- [x] **13. 죽은 코드 정리** ✅ GeometryConverter(ToCurveLoop/GetLoopPoints/ToRevitPoint+미사용 상수), Longi cmd(GenerateSamplePositions/DistributeCountToPair/MatchInnerOuterPairs/CreateOffsetMidpointLineDirectShape), Shear cmd(BuildBaseCurve/GetEndpointFarFromBC/ComputeOutwardDir/TryCreateLineDirectShape/GetOrCreateRedLineStyle/TryCreateModelLines), Transverse(FindHookType), LongiCurveSampler(CentroidX), LongiWindow(GetRefArcLen) 삭제
   - `Models/GeometryConverter.cs`의 `ToRevitPoint/ToCurveLoop/GetLoopPoints` — 어디서도 호출 안 됨(grep 확인). 삭제 권장. (※ 지오메트리 리뷰가 Critical로 본 "원점 미차감"은 이 죽은 코드라 실제 버그 아님.)
   - ShearCommand `BuildBaseCurve`/`TryCreateLineDirectShape`(미사용 `sset` 포함)/`GetBoundaryCenter` 등, Longi `GenerateSamplePositions`/`DistributeCountToPair`/`MatchInnerOuterPairs`, Transverse `FindHookType`, PreviewLongitudinal 주석블록.
 - [ ] **14. 하드코딩 매직넘버** — 기본 depth 1000, CTC 200, 후크 100mm, fallback 배수 `7.6923`(주석 없음), epsilon(0.001/0.01/1e-6/1e-9). `const` 승격.
-- [ ] **15. `MergeCloseVertices` null/empty 가드 없음** — `Models/GeometryConverter.cs:249` (457행 실사용). 빈 입력 시 예외.
-- [ ] **16. `IExternalCommand` 인스턴스 필드** — `CreateTransverseRebarCommand` `_debugLogged` 등, Revit 인스턴스 재사용 시 세션당 1회만 동작. 지역변수로.
-- [ ] **17. 기타** — 모달 다이얼로그 `DialogResult=true; Close();` 중복 / 파일명 케이싱 `Previewrebarcurvescommand.cs` / 리본 버튼 아이콘(`LargeImage`) 부재 / `OnShutdown`에서 static `SessionCache` 미정리(문서 전환 시 잔존).
+- [x] **15. `MergeCloseVertices` null/empty 가드 없음** — `Models/GeometryConverter.cs` ✅ null/empty 방어 추가
+- [x] **16. `IExternalCommand` 인스턴스 필드** — `CreateTransverseRebarCommand` `_verboseDebug`/`_debugLogged` ✅ Execute 지역변수로 이동
+- [x] **17. `OnShutdown` SessionCache 정리** — `App.cs` ✅ `SessionCache.Clear()` 추가 + ScheduleExcelExporter stale 주석(9→10) 정정. (※ DialogResult Close 중복/파일명 케이싱/리본 아이콘은 보류 — 무해/저가치)
 
 ---
 

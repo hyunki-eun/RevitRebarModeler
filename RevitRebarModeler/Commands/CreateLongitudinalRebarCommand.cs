@@ -662,74 +662,6 @@ namespace RevitRebarModeler.Commands
             return Result.Succeeded;
         }
 
-        // ============================================================
-        // 샘플 위치 생성: anchor 기준 양쪽 확장. 한쪽이 boundary 도달하면 반대쪽으로 비대칭 확장.
-        // ============================================================
-        private List<double> GenerateSamplePositions(double anchorArcLen, double ctcMm, int sets, double totalArcLen)
-        {
-            var result = new List<double>();
-            if (sets <= 0 || ctcMm <= 0 || totalArcLen <= 0) return result;
-
-            bool setsOdd = (sets % 2 == 1);
-
-            // 후보 생성: anchor 기준으로 거리순 sort된 위치들
-            var candidates = new List<double>();
-            if (setsOdd)
-            {
-                if (anchorArcLen >= -1e-6 && anchorArcLen <= totalArcLen + 1e-6)
-                    candidates.Add(anchorArcLen);
-            }
-
-            // setsOdd면 k=1 → anchor±CTC, k=2 → anchor±2CTC, ...
-            // !setsOdd면 k=1 → anchor±CTC/2, k=2 → anchor±3CTC/2, ...
-            int k = 1;
-            int safetyLimit = sets * 4 + 10;
-            while (candidates.Count < sets && k < safetyLimit)
-            {
-                double offset = setsOdd ? k * ctcMm : (k - 0.5) * ctcMm;
-                double rPos = anchorArcLen + offset;
-                double lPos = anchorArcLen - offset;
-
-                bool rOk = rPos >= -1e-6 && rPos <= totalArcLen + 1e-6;
-                bool lOk = lPos >= -1e-6 && lPos <= totalArcLen + 1e-6;
-
-                if (rOk) candidates.Add(rPos);
-                if (candidates.Count >= sets) break;
-                if (lOk) candidates.Add(lPos);
-
-                // 양쪽 모두 범위 밖이면 종료
-                if (!rOk && !lOk) break;
-
-                k++;
-            }
-
-            candidates.Sort();
-            return candidates;
-        }
-
-        /// <summary>
-        /// 구조도당 총 갯수를 쌍 수로 분배.
-        /// 각 쌍에 동일 수 배정 + 짝수 보정 (4N+2 형태 우선).
-        /// 예: count=10, pairs=3 → 각 쌍 4개 (총 12개, 실제 의도에 가까움).
-        /// </summary>
-        private int DistributeCountToPair(int totalCount, int pairs)
-        {
-            if (pairs <= 0) return 0;
-            if (totalCount <= 0) return 0;
-
-            double perPair = (double)totalCount / pairs;
-            int perPairInt = (int)Math.Round(perPair);
-
-            // 짝수로 보정 (홀수면 위로 올림)
-            if (perPairInt % 2 != 0) perPairInt += 1;
-
-            // 4N+2 우선: 4N이면 +2 해서 4N+2로 조정
-            // (단, 사용자가 4, 8, 12 같은 값을 명시했으면 경고만 띄우고 진행 — 여기선 분배 후 결과가 4N이면 UI warning은 이미 통과했다고 가정)
-            if (perPairInt < 2) perPairInt = 2;
-
-            return perPairInt;
-        }
-
         /// <summary>
         /// Pos2 선택값을 부호 있는 shift 거리(mm)로 변환.
         /// +offset/2 = 양수 (BC 반대 방향, 지반 쪽)
@@ -864,28 +796,6 @@ namespace RevitRebarModeler.Commands
         }
 
         /// <summary>
-        /// Civil3D 원본 저장 순서 기준 쌍 매칭: 앞 i번째(내측) ↔ 뒤 i번째(외측).
-        /// BC 인자는 시그니처 유지 목적으로 남겨두며 현재는 사용하지 않는다.
-        /// </summary>
-        private List<(TransverseRebarData inner, TransverseRebarData outer)> MatchInnerOuterPairs(
-            List<TransverseRebarData> rebars, double bCx, double bCy, bool hasCenter)
-        {
-            var result = new List<(TransverseRebarData, TransverseRebarData)>();
-            if (rebars == null || rebars.Count < 2) return result;
-
-            int half = rebars.Count / 2;
-            for (int i = 0; i < half; i++)
-            {
-                var inner = rebars[i];
-                var outer = rebars[i + half];
-                if (inner?.Segments == null || inner.Segments.Count == 0) continue;
-                if (outer?.Segments == null || outer.Segments.Count == 0) continue;
-                result.Add((inner, outer));
-            }
-            return result;
-        }
-
-        /// <summary>
         /// Civil3D 원본 저장 순서 기준 분류: 앞 절반 = 내측, 뒤 절반 = 외측.
         /// BC 인자는 시그니처 유지 목적으로 남겨두며 현재는 사용하지 않는다.
         /// </summary>
@@ -999,62 +909,6 @@ namespace RevitRebarModeler.Commands
                     var blue = new Color(50, 130, 255);
                     ogs.SetProjectionLineColor(blue);
                     ogs.SetCutLineColor(blue);
-                    activeView.SetElementOverrides(ds.Id, ogs);
-                }
-                catch { }
-            }
-        }
-
-        /// <summary>
-        /// offsetSegs(DirectShape)의 호장(arc-length) 중앙을 통과하는 JSON 중심선과 평행한
-        /// 직선을 빨간색 DirectShape로 표시. JSON 중심선(파란)과 비교하면 anchor 어긋남이
-        /// 시각적으로 보임.
-        /// </summary>
-        private void CreateOffsetMidpointLineDirectShape(Document doc, string structureKey,
-            List<RebarSegment> offsetSegs,
-            double jsonSx, double jsonSy, double jsonEx, double jsonEy)
-        {
-            if (offsetSegs == null || offsetSegs.Count == 0) return;
-
-            double totalLen = LongiCurveSampler.TotalLength(offsetSegs);
-            if (totalLen <= 0) return;
-
-            // offsetSegs 호장 중앙점
-            if (!LongiCurveSampler.SamplePointAt(offsetSegs, totalLen / 2.0, out var midPt))
-                return;
-            if (midPt == null) return;
-
-            // JSON 중심선의 중간점
-            double jMidX = (jsonSx + jsonEx) / 2.0;
-            double jMidY = (jsonSy + jsonEy) / 2.0;
-
-            // 평행 이동 벡터 = midPt - JSON 중간점
-            double tx = midPt.X - jMidX;
-            double ty = midPt.Y - jMidY;
-
-            // JSON 직선의 두 끝점을 평행 이동
-            var p1 = Civil3DCoordinate.ToRevitWorld(jsonSx + tx, jsonSy + ty, 0);
-            var p2 = Civil3DCoordinate.ToRevitWorld(jsonEx + tx, jsonEy + ty, 0);
-            if (p1.DistanceTo(p2) < 0.001) return;
-
-            var line = Line.CreateBound(p1, p2);
-            var ds = DirectShape.CreateElement(doc, new ElementId(BuiltInCategory.OST_GenericModel));
-            ds.ApplicationId = "RevitRebarModeler";
-            string mark = $"DirectShape중앙선_{structureKey}";
-            ds.ApplicationDataId = mark;
-            try { ds.Name = mark; } catch { }
-            ds.SetShape(new List<GeometryObject> { line });
-            ds.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.Set(mark);
-
-            var activeView = doc.ActiveView;
-            if (activeView != null)
-            {
-                try
-                {
-                    var ogs = new OverrideGraphicSettings();
-                    var red = new Color(255, 60, 60);
-                    ogs.SetProjectionLineColor(red);
-                    ogs.SetCutLineColor(red);
                     activeView.SetElementOverrides(ds.Id, ogs);
                 }
                 catch { }

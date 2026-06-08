@@ -745,17 +745,6 @@ namespace RevitRebarModeler.Models
             };
         }
 
-        private static double CentroidX(List<RebarSegment> segs)
-        {
-            double sx = 0; int n = 0;
-            foreach (var s in segs)
-            {
-                if (s.StartPoint != null) { sx += s.StartPoint.X; n++; }
-                if (s.EndPoint != null) { sx += s.EndPoint.X; n++; }
-            }
-            return n == 0 ? 0 : sx / n;
-        }
-
         /// <summary>
         /// Polyline segments의 순서와 방향을 반전.
         /// </summary>

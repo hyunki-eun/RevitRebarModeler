@@ -10,151 +10,11 @@ namespace RevitRebarModeler.Models
     public static class GeometryConverter
     {
         private const double MmToFeet = 1.0 / 304.8;
-        private const double MinDistMm = 2.0;          // 2mm 미만 꼭짓점 병합
-        private const double MinCurveLenFt = 0.001;     // ~0.3mm, Revit 최소 커브 길이
-        private const int ArcSubdivisions = 8;          // Arc→Line 분할 수
 
-        /// <summary>
-        /// Civil3D 좌표 변환:
-        /// Civil3D X (수평) → Revit X
-        /// Civil3D Y (수직) → Revit Z
-        /// 단위: mm → feet
-        /// </summary>
-        public static XYZ ToRevitPoint(double cadX, double cadY)
-        {
-            return new XYZ(cadX * MmToFeet, 0, cadY * MmToFeet);
-        }
-
-        /// <summary>닫힌 Vertex 배열 → CurveLoop (Arc→Line 분할 방식)</summary>
-        public static CurveLoop ToCurveLoop(List<StructureVertex> vertices)
-        {
-            if (vertices == null || vertices.Count < 3)
-                return null;
-
-            // 1단계: 근접 꼭짓점 병합 (mm 단위에서 판별)
-            var merged = MergeCloseVertices(vertices, MinDistMm);
-            if (merged.Count < 3)
-                return null;
-
-            // 2단계: Vertex → Revit 점으로 변환 (Arc는 Line 분할)
-            //   - Bulge가 있는 세그먼트는 여러 개의 중간점을 생성하여 직선 분할
-            //   - 이렇게 하면 모든 커브가 Line이므로 endpoint 불일치 문제가 없음
-            var allPoints = new List<XYZ>();
-            int n = merged.Count;
-
-            for (int i = 0; i < n; i++)
-            {
-                var v1 = merged[i];
-                var v2 = merged[(i + 1) % n];
-
-                XYZ p1 = ToRevitPoint(v1.X, v1.Y);
-                XYZ p2 = ToRevitPoint(v2.X, v2.Y);
-
-                // 시작점 추가 (중복 방지)
-                if (allPoints.Count == 0 || allPoints.Last().DistanceTo(p1) > MinCurveLenFt)
-                    allPoints.Add(p1);
-
-                if (Math.Abs(v1.Bulge) > 1e-8)
-                {
-                    // Arc → 여러 개의 중간점 생성
-                    var arcPoints = SubdivideArc(v1.X, v1.Y, v2.X, v2.Y, v1.Bulge, ArcSubdivisions);
-                    // arcPoints[0]=시작점, arcPoints[last]=끝점 → 중간점만 추가
-                    for (int j = 1; j < arcPoints.Count - 1; j++)
-                    {
-                        XYZ pt = ToRevitPoint(arcPoints[j].Item1, arcPoints[j].Item2);
-                        if (allPoints.Last().DistanceTo(pt) > MinCurveLenFt)
-                            allPoints.Add(pt);
-                    }
-                }
-                // 끝점은 다음 반복의 시작점으로 추가되므로 여기서는 추가하지 않음
-            }
-
-            // 마지막 점과 첫 점이 너무 가까우면 제거
-            if (allPoints.Count > 1 && allPoints.Last().DistanceTo(allPoints[0]) < MinCurveLenFt)
-                allPoints.RemoveAt(allPoints.Count - 1);
-
-            if (allPoints.Count < 3)
-                return null;
-
-            // 3단계: 점열 → Line 커브 리스트
-            var curves = new List<Curve>();
-            for (int i = 0; i < allPoints.Count; i++)
-            {
-                XYZ p1 = allPoints[i];
-                XYZ p2 = allPoints[(i + 1) % allPoints.Count];
-
-                double dist = p1.DistanceTo(p2);
-                if (dist < MinCurveLenFt)
-                    continue;
-
-                curves.Add(Line.CreateBound(p1, p2));
-            }
-
-            if (curves.Count < 3)
-                return null;
-
-            // 4단계: CurveLoop 생성
-            try
-            {
-                return CurveLoop.Create(curves);
-            }
-            catch
-            {
-                // 폴백: 수동 Append
-                try
-                {
-                    var loop = new CurveLoop();
-                    foreach (var c in curves)
-                        loop.Append(c);
-                    return loop;
-                }
-                catch
-                {
-                    return null;
-                }
-            }
-        }
-
-        /// <summary>CurveLoop의 점 목록을 XZ 평면 2D 점으로 반환 (TessellatedShapeBuilder 용)</summary>
-        public static List<XYZ> GetLoopPoints(List<StructureVertex> vertices)
-        {
-            if (vertices == null || vertices.Count < 3)
-                return null;
-
-            var merged = MergeCloseVertices(vertices, MinDistMm);
-            if (merged.Count < 3)
-                return null;
-
-            var allPoints = new List<XYZ>();
-            int n = merged.Count;
-
-            for (int i = 0; i < n; i++)
-            {
-                var v1 = merged[i];
-                var v2 = merged[(i + 1) % n];
-
-                XYZ p1 = ToRevitPoint(v1.X, v1.Y);
-
-                if (allPoints.Count == 0 || allPoints.Last().DistanceTo(p1) > MinCurveLenFt)
-                    allPoints.Add(p1);
-
-                if (Math.Abs(v1.Bulge) > 1e-8)
-                {
-                    var arcPoints = SubdivideArc(v1.X, v1.Y, v2.X, v2.Y, v1.Bulge, ArcSubdivisions);
-                    for (int j = 1; j < arcPoints.Count - 1; j++)
-                    {
-                        XYZ pt = ToRevitPoint(arcPoints[j].Item1, arcPoints[j].Item2);
-                        if (allPoints.Last().DistanceTo(pt) > MinCurveLenFt)
-                            allPoints.Add(pt);
-                    }
-                }
-            }
-
-            if (allPoints.Count > 1 && allPoints.Last().DistanceTo(allPoints[0]) < MinCurveLenFt)
-                allPoints.RemoveAt(allPoints.Count - 1);
-
-            return allPoints.Count >= 3 ? allPoints : null;
-        }
+        // [미사용 제거 2026-06-08] ToCurveLoop / GetLoopPoints / ToRevitPoint 는 호출처가 없어 삭제.
+        //   ※ 재추가 시 주의: 옛 ToRevitPoint 는 GlobalOrigin을 빼지 않는 절대 mm→ft 변환이었음.
+        //     절대좌표가 Revit 내부원점에서 멀면 배치 오류가 나므로 Civil3DCoordinate.ToRevitWorld
+        //     처럼 GlobalOrigin 보정을 반드시 포함할 것.
 
         /// <summary>
         /// Bulge가 있는 세그먼트를 N개의 점으로 분할
@@ -246,6 +106,7 @@ namespace RevitRebarModeler.Models
         public static List<StructureVertex> MergeCloseVertices(List<StructureVertex> verts, double minDistMm = 2.0)
         {
             var result = new List<StructureVertex>();
+            if (verts == null || verts.Count == 0) return result;   // 빈/널 입력 방어
             result.Add(verts[0]);
 
             for (int i = 1; i < verts.Count; i++)

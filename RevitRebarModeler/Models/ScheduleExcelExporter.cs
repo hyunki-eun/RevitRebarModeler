@@ -13,7 +13,7 @@ namespace RevitRebarModeler.Models
     ///   - 두 번째 컬럼 "직경": 횡/종 → "D16", 전단 → "D13_전단" 으로 종류 통합 표기
     ///   - 이후 컬럼: 본수 / 단위길이 / 총길이 / 단위중량 / 총중량 / 할증 / 할증중량
     ///   - 마지막에 직경별 합계 + 총합.
-    /// 컬럼 총 9개.
+    /// 컬럼 총 10개 (ColCount).
     /// </summary>
     public static class ScheduleExcelExporter
     {

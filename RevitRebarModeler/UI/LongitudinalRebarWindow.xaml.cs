@@ -404,16 +404,6 @@ namespace RevitRebarModeler.UI
             Close();
         }
 
-        private double GetRefArcLen(LongiSheetItem item)
-        {
-            switch (item.Pos1)
-            {
-                case "내측": return item.InnerArcLenMm;
-                case "외측": return item.OuterArcLenMm;
-                default: return (item.InnerArcLenMm + item.OuterArcLenMm) / 2.0;
-            }
-        }
-
         private Pos1Kind ParsePos1(string s)
         {
             switch (s)

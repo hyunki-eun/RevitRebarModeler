@@ -18,12 +18,13 @@ namespace RevitRebarModeler.Commands
     {
         private const double MmToFt = 1.0 / 304.8;
 
-        private bool _verboseDebug = false;   // 개발 시 true, 사용자 배포 시 false
-        private bool _debugLogged = false;
-
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
             if (!LicenseGuard.CheckOrBlock()) return Result.Cancelled;
+
+            // 디버그 플래그는 호출 단위 지역 상태로 유지 (IExternalCommand 인스턴스 재사용 시 누적 방지)
+            bool _verboseDebug = false;   // 개발 시 true, 사용자 배포 시 false
+            bool _debugLogged = false;
 
             var doc = commandData.Application.ActiveUIDocument.Document;
 
@@ -555,13 +556,6 @@ namespace RevitRebarModeler.Commands
             return param != null ? param.AsDouble() : 0.0;
         }
 
-        private RebarHookType FindHookType(Document doc, string name = "표준 - 90도")
-        {
-            return new FilteredElementCollector(doc)
-                .OfClass(typeof(RebarHookType))
-                .Cast<RebarHookType>()
-                .FirstOrDefault(h => h.Name.Contains(name) || h.Name.Contains("90"));
-        }
     }
 
 }

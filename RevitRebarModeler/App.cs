@@ -28,6 +28,15 @@ namespace RevitRebarModeler
         /// 전단철근이 횡방향 N단의 Z 위치 = (N-1) × CTC/2 로 산출하기 위해 저장.
         /// </summary>
         public static System.Collections.Generic.Dictionary<string, double> TransverseCtcMap { get; set; }
+
+        /// <summary>세션 캐시 초기화. Revit 종료 시 호출해 다음 세션으로 잔존 데이터가 새지 않게 한다.</summary>
+        public static void Clear()
+        {
+            LoadedJson = null;
+            LoadedJsonPath = null;
+            LongitudinalSettings = null;
+            TransverseCtcMap = null;
+        }
     }
 
     public class App : IExternalApplication
@@ -134,6 +143,7 @@ namespace RevitRebarModeler
 
         public Result OnShutdown(UIControlledApplication app)
         {
+            SessionCache.Clear();
             return Result.Succeeded;
         }
     }
