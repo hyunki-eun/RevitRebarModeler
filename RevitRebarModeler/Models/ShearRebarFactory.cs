@@ -126,42 +126,55 @@ namespace RevitRebarModeler.Models
         private static List<ElementId> EnsureSharedParameters(Document doc)
         {
             var app = doc.Application;
-            string sharedParamFile = app.SharedParametersFilename;
-
-            // SharedParameter 파일이 없으면 임시 파일 생성
-            string tempPath = null;
-            if (string.IsNullOrEmpty(sharedParamFile) || !File.Exists(sharedParamFile))
+            // app.SharedParametersFilename 은 앱 전역 설정 → 임시로 바꿨으면 작업 후 복원.
+            string originalSpPath = app.SharedParametersFilename;
+            bool changedSpPath = false;
+            try
             {
-                tempPath = Path.Combine(Path.GetTempPath(), "RevitRebarModeler_SharedParams.txt");
-                if (!File.Exists(tempPath)) File.WriteAllText(tempPath, "");
-                app.SharedParametersFilename = tempPath;
-            }
-
-            DefinitionFile defFile = app.OpenSharedParameterFile();
-            if (defFile == null) return null;
-
-            DefinitionGroup group = defFile.Groups.get_Item(ParamGroupName)
-                                    ?? defFile.Groups.Create(ParamGroupName);
-
-            var ids = new List<ElementId>();
-            foreach (var pName in ParamNames)
-            {
-                Definition def = group.Definitions.get_Item(pName);
-                if (def == null)
+                // SharedParameter 파일이 없으면 임시 파일 생성 (유효 헤더 포함)
+                if (string.IsNullOrEmpty(originalSpPath) || !File.Exists(originalSpPath))
                 {
-                    var opts = new ExternalDefinitionCreationOptions(pName, SpecTypeId.Length);
-                    def = group.Definitions.Create(opts);
+                    string tempPath = Path.Combine(Path.GetTempPath(), "RevitRebarModeler_SharedParams.txt");
+                    if (!File.Exists(tempPath))
+                        File.WriteAllText(tempPath, RebarScheduleParameters.SharedParamFileHeader);
+                    app.SharedParametersFilename = tempPath;
+                    changedSpPath = true;
                 }
 
-                // SharedParameterElement 가 이미 doc 에 바인딩되어 있는지 확인
-                var existing = SharedParameterElement.Lookup(doc, ((ExternalDefinition)def).GUID);
-                if (existing == null)
+                DefinitionFile defFile = app.OpenSharedParameterFile();
+                if (defFile == null) return null;
+
+                DefinitionGroup group = defFile.Groups.get_Item(ParamGroupName)
+                                        ?? defFile.Groups.Create(ParamGroupName);
+
+                var ids = new List<ElementId>();
+                foreach (var pName in ParamNames)
                 {
-                    existing = SharedParameterElement.Create(doc, (ExternalDefinition)def);
+                    Definition def = group.Definitions.get_Item(pName);
+                    if (def == null)
+                    {
+                        var opts = new ExternalDefinitionCreationOptions(pName, SpecTypeId.Length);
+                        def = group.Definitions.Create(opts);
+                    }
+
+                    // 외부 정의가 아니거나 생성 실패 시 안전하게 중단
+                    if (!(def is ExternalDefinition extDef)) return null;
+
+                    // SharedParameterElement 가 이미 doc 에 바인딩되어 있는지 확인
+                    var existing = SharedParameterElement.Lookup(doc, extDef.GUID)
+                                   ?? SharedParameterElement.Create(doc, extDef);
+                    if (existing == null) return null;
+                    ids.Add(existing.Id);
                 }
-                ids.Add(existing.Id);
+                return ids.Count == 5 ? ids : null;
             }
-            return ids.Count == 5 ? ids : null;
+            finally
+            {
+                if (changedSpPath)
+                {
+                    try { app.SharedParametersFilename = originalSpPath; } catch { }
+                }
+            }
         }
 
         // ============================================================

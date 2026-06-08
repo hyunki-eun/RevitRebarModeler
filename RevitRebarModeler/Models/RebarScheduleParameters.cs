@@ -131,34 +131,53 @@ namespace RevitRebarModeler.Models
         private const string GroupName = "RebarSchedule";
 
         /// <summary>
+        /// 빈 공유 파라미터 파일이 OpenSharedParameterFile 에서 거부되지 않도록 하는 최소 유효 헤더.
+        /// (0바이트 파일은 헤더가 없어 일부 환경에서 null 반환/예외)
+        /// </summary>
+        internal const string SharedParamFileHeader =
+            "# This is a Revit shared parameter file.\n" +
+            "# Do not edit manually.\n" +
+            "*META\tVERSION\tMINVERSION\n" +
+            "META\t2\t1\n" +
+            "*GROUP\tID\tNAME\n" +
+            "*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\n";
+
+        /// <summary>
         /// Shared Parameter 8종을 정의하고 Rebar 카테고리에 Instance Binding 등록.
         /// 트랜잭션 내부에서 호출해야 함.
         /// </summary>
         public static void EnsureBound(Application app, Document doc)
         {
-            string spPath = app.SharedParametersFilename;
-            if (string.IsNullOrEmpty(spPath) || !File.Exists(spPath))
+            // app.SharedParametersFilename 은 앱 전역(다른 프로젝트 공유) 설정이므로,
+            // 우리가 임시로 바꿨다면 작업 후 원래대로 복원한다.
+            string originalSpPath = app.SharedParametersFilename;
+            bool changedSpPath = false;
+            try
             {
-                string dllDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-                spPath = Path.Combine(dllDir ?? "", "RevitRebarModeler_SharedParams.txt");
-                if (!File.Exists(spPath))
-                    File.WriteAllText(spPath, "");
-                app.SharedParametersFilename = spPath;
-            }
+                string spPath = originalSpPath;
+                if (string.IsNullOrEmpty(spPath) || !File.Exists(spPath))
+                {
+                    string dllDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                    spPath = Path.Combine(dllDir ?? "", "RevitRebarModeler_SharedParams.txt");
+                    if (!File.Exists(spPath))
+                        File.WriteAllText(spPath, SharedParamFileHeader);
+                    app.SharedParametersFilename = spPath;
+                    changedSpPath = true;
+                }
 
-            DefinitionFile defFile = app.OpenSharedParameterFile();
-            if (defFile == null)
-                throw new InvalidOperationException("Shared Parameter 파일을 열 수 없습니다: " + spPath);
+                DefinitionFile defFile = app.OpenSharedParameterFile();
+                if (defFile == null)
+                    throw new InvalidOperationException("Shared Parameter 파일을 열 수 없습니다: " + spPath);
 
-            DefinitionGroup grp = defFile.Groups.get_Item(GroupName) ?? defFile.Groups.Create(GroupName);
+                DefinitionGroup grp = defFile.Groups.get_Item(GroupName) ?? defFile.Groups.Create(GroupName);
 
-            var catSet = app.Create.NewCategorySet();
-            Category rebarCat = doc.Settings.Categories.get_Item(BuiltInCategory.OST_Rebar);
-            if (rebarCat == null)
-                throw new InvalidOperationException("Rebar 카테고리를 찾을 수 없습니다.");
-            catSet.Insert(rebarCat);
+                var catSet = app.Create.NewCategorySet();
+                Category rebarCat = doc.Settings.Categories.get_Item(BuiltInCategory.OST_Rebar);
+                if (rebarCat == null)
+                    throw new InvalidOperationException("Rebar 카테고리를 찾을 수 없습니다.");
+                catSet.Insert(rebarCat);
 
-            EnsureParam(grp, Names.Type, SpecTypeId.String.Text, catSet, doc, app);
+                EnsureParam(grp, Names.Type, SpecTypeId.String.Text, catSet, doc, app);
             EnsureParam(grp, Names.DiameterLabel, SpecTypeId.String.Text, catSet, doc, app);
             EnsureParam(grp, Names.UnitLengthMm, SpecTypeId.Number, catSet, doc, app);
             EnsureParam(grp, Names.Count, SpecTypeId.Int.Integer, catSet, doc, app);
@@ -184,6 +203,14 @@ namespace RevitRebarModeler.Models
             EnsureParam(grp, Names.M_TotalWeightT, SpecTypeId.Number, catSet, doc, app);
             EnsureParam(grp, Names.M_SurchargePercent, SpecTypeId.Number, catSet, doc, app);
             EnsureParam(grp, Names.M_SurchargeTotalT, SpecTypeId.Number, catSet, doc, app);
+            }
+            finally
+            {
+                if (changedSpPath)
+                {
+                    try { app.SharedParametersFilename = originalSpPath; } catch { }
+                }
+            }
         }
 
         private static void EnsureParam(

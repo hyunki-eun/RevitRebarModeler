@@ -58,7 +58,7 @@
   - `TransRebarCount`(원시 폴리라인 수)+modulo로 검증하나 실제 배치/프리뷰는 `TransUnitCount`(계단수)+겹침 스텝(g-1) 기준 → 메시지가 실제와 모순.
   - **개선:** 그룹 산술을 한 메서드로 묶어 검증/프리뷰/배치 공유.
 
-- [ ] **11. 공유파라미터 파일 처리 위험** — `Models/RebarScheduleParameters.cs:137-147`, `Models/ShearRebarFactory.cs:136`
+- [x] **11. 공유파라미터 파일 처리 위험** — `Models/RebarScheduleParameters.cs`, `Models/ShearRebarFactory.cs` ✅ 앱 전역 `SharedParametersFilename`을 try/finally로 원복(다른 프로젝트 영향 방지) + 0바이트 대신 유효 SP 헤더 기록 + `SharedParameterElement.Create` null/캐스트 가드
   - `app.SharedParametersFilename`(앱 전역) 덮어써 다른 프로젝트 영향; `File.WriteAllText(path,"")` 0바이트 파일은 유효 SP 헤더 없어 `OpenSharedParameterFile` 실패 가능.
   - **개선:** 진짜 미설정일 때만 변경+사후 복원, 최소 SP 헤더 기록.
 
