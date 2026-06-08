@@ -10,13 +10,14 @@ using Autodesk.Revit.DB.Structure;
 using Autodesk.Revit.UI;
 
 using RevitRebarModeler.Models;
+using static RevitRebarModeler.Models.RebarHelpers;
 
 namespace RevitRebarModeler.Commands
 {
     [Transaction(TransactionMode.Manual)]
     public class CreateLongitudinalRebarCommand : IExternalCommand
     {
-        private const double MmToFt = 1.0 / 304.8;
+        // MmToFt 상수는 RebarHelpers.MmToFt 사용 (using static)
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
@@ -112,7 +113,7 @@ namespace RevitRebarModeler.Commands
                     if (depthMm <= 0) depthMm = 1000;
                     double depthFt = depthMm * MmToFt;
 
-                    RebarBarType barType = FindRebarBarType(doc, setting.DiameterMm);
+                    RebarBarType barType = FindRebarBarType(doc, setting.DiameterMm, preferStirrup: false);
                     if (barType == null)
                     {
                         errors.Add($"[{structureKey}] RebarBarType 매칭 실패 (D{setting.DiameterMm})");
@@ -753,26 +754,6 @@ namespace RevitRebarModeler.Commands
         // ============================================================
         // Boundary/Centerline helpers
         // ============================================================
-        private void GetBoundaryCenter(CivilExportData data, string structureKey,
-            out double cx, out double cy, out bool found)
-        {
-            cx = cy = 0;
-            found = false;
-            if (data?.StructureRegions == null) return;
-            var keyRegex = new Regex(@"구조도\((\d+)\)");
-            foreach (var cd in data.StructureRegions)
-            {
-                var m = keyRegex.Match(cd.CycleKey ?? "");
-                if (!m.Success) continue;
-                if ($"구조도({m.Groups[1].Value})" != structureKey) continue;
-                if (cd.BoundaryCenterX == 0 && cd.BoundaryCenterY == 0) continue;
-                cx = cd.BoundaryCenterX;
-                cy = cd.BoundaryCenterY;
-                found = true;
-                return;
-            }
-        }
-
         private void GetCenterline(CivilExportData data, string structureKey,
             out double sx, out double sy, out double ex, out double ey, out bool found)
         {
@@ -795,25 +776,8 @@ namespace RevitRebarModeler.Commands
             }
         }
 
-        /// <summary>
-        /// Civil3D 원본 저장 순서 기준 분류: 앞 절반 = 내측, 뒤 절반 = 외측.
-        /// BC 인자는 시그니처 유지 목적으로 남겨두며 현재는 사용하지 않는다.
-        /// </summary>
-        private Dictionary<string, bool> ClassifyInnerOuter(List<TransverseRebarData> rebars,
-            double cx, double cy, bool hasCenter)
-        {
-            var result = new Dictionary<string, bool>();
-            if (rebars == null || rebars.Count < 2) return result;
-
-            int half = rebars.Count / 2;
-            for (int i = 0; i < rebars.Count; i++)
-            {
-                var r = rebars[i];
-                if (r?.Segments == null || r.Segments.Count == 0) continue;
-                result[r.Id] = (i >= half); // true = outer (뒤 절반)
-            }
-            return result;
-        }
+        // [통합] GetBoundaryCenter / ClassifyInnerOuter / ParseDepthFromHost / BuildHostMap /
+        //   ExtractStructureKey / FindRebarBarType / GetBarDiameterFt 는 Models.RebarHelpers 로 이동.
 
         // ============================================================
         // 공통 헬퍼
@@ -932,78 +896,6 @@ namespace RevitRebarModeler.Commands
             }
         }
 
-        private double ParseDepthFromHost(Element hostElement)
-        {
-            string comments = hostElement.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() ?? "";
-            var match = Regex.Match(comments, @"depth=(\d+\.?\d*)");
-            return match.Success
-                ? double.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)
-                : 0;
-        }
-
-        private Dictionary<string, Element> BuildHostMap(Document doc)
-        {
-            var map = new Dictionary<string, Element>();
-            var hosts = new FilteredElementCollector(doc)
-                .OfClass(typeof(FamilyInstance))
-                .OfCategory(BuiltInCategory.OST_StructuralFraming)
-                .WhereElementIsNotElementType()
-                .ToList();
-
-            if (hosts.Count == 0)
-            {
-                hosts = new FilteredElementCollector(doc)
-                    .OfClass(typeof(FamilyInstance))
-                    .OfCategory(BuiltInCategory.OST_GenericModel)
-                    .WhereElementIsNotElementType()
-                    .ToList();
-            }
-
-            foreach (var elem in hosts)
-            {
-                string comments = elem.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() ?? "";
-                string key = ExtractStructureKey(comments);
-                if (!string.IsNullOrEmpty(key) && !map.ContainsKey(key))
-                    map[key] = elem;
-            }
-            return map;
-        }
-
-        private string ExtractStructureKey(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return "";
-            var match = Regex.Match(text, @"구조도\(\d+\)");
-            return match.Success ? match.Value : "";
-        }
-
-        private RebarBarType FindRebarBarType(Document doc, double diameterMm)
-        {
-            int d = (int)Math.Round(diameterMm);
-            double targetFt = diameterMm * MmToFt;
-
-            var allTypes = new FilteredElementCollector(doc)
-                .OfClass(typeof(RebarBarType))
-                .Cast<RebarBarType>()
-                .ToList();
-
-            string[] nameCandidates = { $"D{d}", $"{d} 400S", $"D{d} 400S", $"{d}" };
-            foreach (var name in nameCandidates)
-            {
-                var hit = allTypes.FirstOrDefault(r => r.Name == name);
-                if (hit != null) return hit;
-            }
-
-            return allTypes
-                .Where(r => Math.Abs(GetBarDiameterFt(r) - targetFt) < 0.001)
-                .OrderBy(r => (r.Name.Contains("스트럽") || r.Name.Contains("타이") || r.Name.Contains("Stirrup") || r.Name.Contains("Tie")) ? 1 : 0)
-                .FirstOrDefault();
-        }
-
-        private double GetBarDiameterFt(RebarBarType barType)
-        {
-            var param = barType.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER);
-            return param != null ? param.AsDouble() : 0.0;
-        }
     }
 
 }

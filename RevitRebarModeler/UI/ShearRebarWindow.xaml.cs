@@ -10,6 +10,7 @@ using System.Windows.Media;
 using Autodesk.Revit.DB;
 
 using RevitRebarModeler.Models;
+using static RevitRebarModeler.Models.RebarHelpers;
 
 namespace RevitRebarModeler.UI
 {
@@ -147,12 +148,7 @@ namespace RevitRebarModeler.UI
             TxtInfo.Text = $"프로젝트: {LoadedData.ProjectName}  ·  구조도 {totalSheets}개  ·  횡철근 합계 {totalRebars}개";
         }
 
-        private string ExtractStructureKey(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return "";
-            var match = Regex.Match(text, @"구조도\(\d+\)");
-            return match.Success ? match.Value : "";
-        }
+        // [통합] ExtractStructureKey 는 Models.RebarHelpers 로 이동.
 
         /// <summary>
         /// Revit 모델에 이미 배치된 종방향/횡방향 Rebar 객체에서

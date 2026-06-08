@@ -43,13 +43,12 @@
   - 대상 파일을 Excel로 열어둔 상태면 `IOException`(실사용 최빈 실패). (참고: ClosedXML 사용이라 COM 누수는 없음, `using` 정상.)
   - **개선:** try/catch로 "파일이 열려 있어 저장 불가" 안내, 임시파일 후 이동.
 
-- [ ] **7. 대규모 헬퍼 코드 중복 — 이미 분기되어 잠재 버그**
+- [x] **7. 대규모 헬퍼 코드 중복 — 이미 분기되어 잠재 버그** ✅ `Models/RebarHelpers.cs` 신설, 9개 파일에서 ExtractStructureKey/ParseDepthFromHost/BuildHostMap/FindRebarBarType/GetBoundaryCenter/ClassifyInnerOuter/GetBarDiameterFt 통합 (`using static`). FindRebarBarType 분기는 `preferStirrup` 파라미터로 보존(Longi/Trans=false, Shear=true).
   - `BuildHostMap`/`ParseDepthFromHost`/`ExtractStructureKey`/`FindRebarBarType`/`ParseDiameter`/`BuildDepthMap` 등이 명령 5개 + UI 4개 + 일람표 2개에 복붙.
   - 이미 어긋남: `FindRebarBarType` 스터럽 정렬이 Longi(`?1:0`, 뒤)와 Shear(`?0:1`, 앞) 반대. 일람표는 Collector↔Populator SourceKey 계약을 수작업 동기화(regex 3중복).
   - **개선:** `RebarCommandHelpers`/`RebarParse` 정적 헬퍼로 통합, regex는 `static readonly Regex`(루프 안 `new Regex`/`Regex.Match` 반복 할당도 해소).
 
-- [ ] **8. `MmToFt`(304.8) 상수 4개 파일 독립 정의** — GeometryConverter, Civil3DCoordinate, ShearRebarFactory(인라인 `/304.8`), 일람표 파일들. 드리프트 위험.
-  - **개선:** 단일 상수 또는 `UnitUtils.ConvertFromInternalUnits`.
+- [x] **8. `MmToFt`(304.8) 상수 중복** ✅ `RebarHelpers.MmToFt`/`FtToMm` 단일 정의. `using static` 적용 파일(명령 5개+Collector)의 사본 const 제거. (※ Civil3DCoordinate/GeometryConverter/Populator/Export는 using static 미적용이라 자체 const 유지 — 차후 필요 시 통합)
 
 - [x] **9. `BuildSheetTransforms`를 루프 안에서 매 시트 재구축** — `Commands/CreateLongitudinalRebarCommand.cs:131-147` ✅ 루프 밖으로 hoist
   - Transverse 명령은 루프 밖(49행)에서 올바르게 호출. Longi만 루프 안 재생성.

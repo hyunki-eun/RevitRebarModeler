@@ -10,13 +10,14 @@ using Autodesk.Revit.DB.Structure;
 using Autodesk.Revit.UI;
 
 using RevitRebarModeler.Models;
+using static RevitRebarModeler.Models.RebarHelpers;
 
 namespace RevitRebarModeler.Commands
 {
     [Transaction(TransactionMode.Manual)]
     public class CreateTransverseRebarCommand : IExternalCommand
     {
-        private const double MmToFt = 1.0 / 304.8;
+        // MmToFt 상수는 RebarHelpers.MmToFt 사용 (using static)
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
@@ -181,7 +182,7 @@ namespace RevitRebarModeler.Commands
                             int dKey0 = (int)Math.Round(rebar.DiameterMm);
                             try
                             {
-                                RebarBarType barType = FindRebarBarType(doc, rebar.DiameterMm);
+                                RebarBarType barType = FindRebarBarType(doc, rebar.DiameterMm, preferStirrup: false);
                                 if (barType == null)
                                 {
                                     failed++;
@@ -442,51 +443,8 @@ namespace RevitRebarModeler.Commands
             return n > 0 ? sx / n : 0;
         }
 
-        private double ParseDepthFromHost(Element hostElement)
-        {
-            string comments = hostElement.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)
-                ?.AsString() ?? "";
-            var match = Regex.Match(comments, @"depth=(\d+\.?\d*)");
-            return match.Success
-                ? double.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)
-                : 0;
-        }
-
-        private Dictionary<string, Element> BuildHostMap(Document doc)
-        {
-            var map = new Dictionary<string, Element>();
-            var hosts = new FilteredElementCollector(doc)
-                .OfClass(typeof(FamilyInstance))
-                .OfCategory(BuiltInCategory.OST_StructuralFraming)
-                .WhereElementIsNotElementType()
-                .ToList();
-
-            if (hosts.Count == 0)
-            {
-                hosts = new FilteredElementCollector(doc)
-                    .OfClass(typeof(FamilyInstance))
-                    .OfCategory(BuiltInCategory.OST_GenericModel)
-                    .WhereElementIsNotElementType()
-                    .ToList();
-            }
-
-            foreach (var elem in hosts)
-            {
-                string comments = elem.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() ?? "";
-                string key = ExtractStructureKey(comments);
-                if (!string.IsNullOrEmpty(key) && !map.ContainsKey(key))
-                    map[key] = elem;
-            }
-
-            return map;
-        }
-
-        private string ExtractStructureKey(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return "";
-            var match = Regex.Match(text, @"구조도\(\d+\)");
-            return match.Success ? match.Value : "";
-        }
+        // [통합] ParseDepthFromHost / BuildHostMap / ExtractStructureKey / FindRebarBarType /
+        //   GetBarDiameterFt 는 Models.RebarHelpers 로 이동.
 
         private List<Curve> BuildCurves(List<RebarSegment> segments, double yOffsetFt,
             Civil3DCoordinate.CenterlineTransform tx)
@@ -522,38 +480,6 @@ namespace RevitRebarModeler.Commands
             }
 
             return Line.CreateBound(p1, p2);
-        }
-
-        private RebarBarType FindRebarBarType(Document doc, double diameterMm)
-        {
-            int d = (int)Math.Round(diameterMm);
-            double targetFt = diameterMm * MmToFt;
-
-            var allTypes = new FilteredElementCollector(doc)
-                .OfClass(typeof(RebarBarType))
-                .Cast<RebarBarType>()
-                .ToList();
-
-            // 1. 이름 정확 일치 (D29, 29 400S 등 여러 규칙 허용)
-            string[] nameCandidates = { $"D{d}", $"{d} 400S", $"D{d} 400S", $"{d}" };
-            foreach (var name in nameCandidates)
-            {
-                var hit = allTypes.FirstOrDefault(r => r.Name == name);
-                if (hit != null) return hit;
-            }
-
-            // 2. 직경 값으로 매칭 (스터럽/타이는 후순위)
-            // Revit 2024+: BarDiameter 제거 → BarModelDiameter / BarNominalDiameter 또는 Parameter로 조회
-            return allTypes
-                .Where(r => Math.Abs(GetBarDiameterFt(r) - targetFt) < 0.001)
-                .OrderBy(r => (r.Name.Contains("스트럽") || r.Name.Contains("타이") || r.Name.Contains("Stirrup") || r.Name.Contains("Tie")) ? 1 : 0)
-                .FirstOrDefault();
-        }
-
-        private double GetBarDiameterFt(RebarBarType barType)
-        {
-            var param = barType.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER);
-            return param != null ? param.AsDouble() : 0.0;
         }
 
     }

@@ -6,6 +6,8 @@ using System.Text.RegularExpressions;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Structure;
 
+using static RevitRebarModeler.Models.RebarHelpers;
+
 namespace RevitRebarModeler.Models
 {
     /// <summary>
@@ -19,7 +21,7 @@ namespace RevitRebarModeler.Models
     /// </summary>
     public static class RebarScheduleCollector
     {
-        private const double FtToMm = 304.8;
+        // FtToMm 상수는 RebarHelpers.FtToMm 사용 (using static)
 
         private static readonly Regex TransRegex =
             new Regex(@"^(구조도\(\d+\))_(\d+)단_(inner|outer)_(\d+)$");
@@ -208,13 +210,7 @@ namespace RevitRebarModeler.Models
             return map;
         }
 
-        // "콘크리트 라이닝 구조도(1)_STA..." → "구조도(1)"
-        private static string ExtractStructureKey(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return "";
-            var m = Regex.Match(text, @"구조도\(\d+\)");
-            return m.Success ? m.Value : "";
-        }
+        // [통합] ExtractStructureKey 는 Models.RebarHelpers 로 이동.
 
         // 해설 = "{PatternName} / {기존 해설}" (패턴 없으면 기존 해설 그대로)
         private static string WithPattern(string patternName, string baseLabel)

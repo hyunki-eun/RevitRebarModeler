@@ -8,6 +8,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 
 using RevitRebarModeler.Models;
+using static RevitRebarModeler.Models.RebarHelpers;
 
 namespace RevitRebarModeler.Commands
 {
@@ -18,7 +19,7 @@ namespace RevitRebarModeler.Commands
     [Transaction(TransactionMode.Manual)]
     public class PreviewRebarCurvesCommand : IExternalCommand
     {
-        private const double MmToFt = 1.0 / 304.8;
+        // MmToFt 상수는 RebarHelpers.MmToFt 사용 (using static)
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
@@ -231,50 +232,8 @@ namespace RevitRebarModeler.Commands
             return Result.Succeeded;
         }
 
-        private double ParseDepthFromHost(Element hostElement)
-        {
-            string comments = hostElement.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)
-                ?.AsString() ?? "";
-            var match = Regex.Match(comments, @"depth=(\d+\.?\d*)");
-            return match.Success
-                ? double.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)
-                : 0;
-        }
-
-        private Dictionary<string, Element> BuildHostMap(Document doc)
-        {
-            var map = new Dictionary<string, Element>();
-            var hosts = new FilteredElementCollector(doc)
-                .OfClass(typeof(FamilyInstance))
-                .OfCategory(BuiltInCategory.OST_StructuralFraming)
-                .WhereElementIsNotElementType()
-                .ToList();
-
-            if (hosts.Count == 0)
-            {
-                hosts = new FilteredElementCollector(doc)
-                    .OfClass(typeof(FamilyInstance))
-                    .OfCategory(BuiltInCategory.OST_GenericModel)
-                    .WhereElementIsNotElementType()
-                    .ToList();
-            }
-
-            foreach (var elem in hosts)
-            {
-                string comments = elem.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() ?? "";
-                string key = ExtractStructureKey(comments);
-                if (!string.IsNullOrEmpty(key) && !map.ContainsKey(key))
-                    map[key] = elem;
-            }
-            return map;
-        }
-
-        private string ExtractStructureKey(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return "";
-            var match = Regex.Match(text, @"구조도\(\d+\)");
-            return match.Success ? match.Value : "";
-        }
+        // [통합] ParseDepthFromHost / BuildHostMap / ExtractStructureKey / GetBoundaryCenter /
+        //   ClassifyInnerOuter 는 Models.RebarHelpers 로 이동.
 
         private List<Curve> BuildCurves(List<RebarSegment> segments, double yOffsetFt,
             Civil3DCoordinate.CenterlineTransform tx)
@@ -309,46 +268,5 @@ namespace RevitRebarModeler.Commands
             return Line.CreateBound(p1, p2);
         }
 
-        private void GetBoundaryCenter(CivilExportData data, string structureKey, out double cx, out double cy, out bool hasCenter)
-        {
-            cx = 0; cy = 0; hasCenter = false;
-            if (data?.StructureRegions == null) return;
-            var keyRegex = new Regex(@"구조도\((\d+)\)");
-            foreach (var cd in data.StructureRegions)
-            {
-                var m = keyRegex.Match(cd.CycleKey ?? "");
-                if (!m.Success) continue;
-                if ($"구조도({m.Groups[1].Value})" != structureKey) continue;
-                if (cd.BoundaryCenterX == 0 && cd.BoundaryCenterY == 0) continue;
-                cx = cd.BoundaryCenterX;
-                cy = cd.BoundaryCenterY;
-                hasCenter = true;
-                return;
-            }
-        }
-
-        /// <summary>
-        /// 6개(혹은 N개)의 polyline을 BC 거리 순위로 절반씩 가른다.
-        /// BC에 더 가까운 절반 = outer, 나머지 = inner.
-        /// (기존 greedy pairing은 외측끼리 가까이 붙어있는 Lap 구성에서 오분류가 발생해서 버림)
-        /// </summary>
-        /// <summary>
-        /// Civil3D 원본 저장 순서 기준 분류: 앞 절반 = 내측, 뒤 절반 = 외측.
-        /// BC 인자는 시그니처 유지 목적으로 남겨두며 현재는 사용하지 않는다.
-        /// </summary>
-        private Dictionary<string, bool> ClassifyInnerOuter(List<TransverseRebarData> rebars, double cx, double cy, bool hasCenter)
-        {
-            var result = new Dictionary<string, bool>();
-            if (rebars == null || rebars.Count < 2) return result;
-
-            int half = rebars.Count / 2;
-            for (int i = 0; i < rebars.Count; i++)
-            {
-                var r = rebars[i];
-                if (r?.Segments == null || r.Segments.Count == 0) continue;
-                result[r.Id] = (i >= half); // true = outer (뒤 절반)
-            }
-            return result;
-        }
     }
 }

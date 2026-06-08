@@ -10,6 +10,7 @@ using System.Windows.Media;
 using Autodesk.Revit.DB;
 
 using RevitRebarModeler.Models;
+using static RevitRebarModeler.Models.RebarHelpers;
 
 namespace RevitRebarModeler.UI
 {
@@ -241,50 +242,7 @@ namespace RevitRebarModeler.UI
             }), System.Windows.Threading.DispatcherPriority.ContextIdle);
         }
 
-        private void GetBoundaryCenter(CivilExportData data, string structureKey, out double cx, out double cy, out bool found)
-        {
-            cx = cy = 0;
-            found = false;
-            if (data?.StructureRegions == null) return;
-            var keyRegex = new Regex(@"구조도\((\d+)\)");
-            foreach (var cd in data.StructureRegions)
-            {
-                var m = keyRegex.Match(cd.CycleKey ?? "");
-                if (!m.Success) continue;
-                if ($"구조도({m.Groups[1].Value})" != structureKey) continue;
-                if (cd.BoundaryCenterX == 0 && cd.BoundaryCenterY == 0) continue;
-                cx = cd.BoundaryCenterX;
-                cy = cd.BoundaryCenterY;
-                found = true;
-                return;
-            }
-        }
-
-        /// <summary>
-        /// Civil3D 원본 저장 순서 기준 분류: 앞 절반 = 내측, 뒤 절반 = 외측.
-        /// BC 인자는 시그니처 유지 목적으로 남겨두며 현재는 사용하지 않는다.
-        /// </summary>
-        private Dictionary<string, bool> ClassifyInnerOuter(List<TransverseRebarData> rebars, double cx, double cy, bool hasCenter)
-        {
-            var result = new Dictionary<string, bool>();
-            if (rebars == null || rebars.Count < 2) return result;
-
-            int half = rebars.Count / 2;
-            for (int i = 0; i < rebars.Count; i++)
-            {
-                var r = rebars[i];
-                if (r?.Segments == null || r.Segments.Count == 0) continue;
-                result[r.Id] = (i >= half); // true = outer (뒤 절반)
-            }
-            return result;
-        }
-
-        private string ExtractStructureKey(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return "";
-            var match = Regex.Match(text, @"구조도\(\d+\)");
-            return match.Success ? match.Value : "";
-        }
+        // [통합] GetBoundaryCenter / ClassifyInnerOuter / ExtractStructureKey 는 Models.RebarHelpers 로 이동.
 
         private void BtnRevalidate_Click(object sender, RoutedEventArgs e)
         {

@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 
 using RevitRebarModeler.Models;
+using static RevitRebarModeler.Models.RebarHelpers;
 
 namespace RevitRebarModeler.UI
 {
@@ -161,12 +162,7 @@ namespace RevitRebarModeler.UI
                            $"횡방향 철근: {total}개 | 구조도: {sheets}개 → Host 자동 매칭";
         }
 
-        private string ExtractStructureKey(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return "";
-            var match = Regex.Match(text, @"구조도\(\d+\)");
-            return match.Success ? match.Value : "";
-        }
+        // [통합] ExtractStructureKey 는 Models.RebarHelpers 로 이동.
 
         private void BtnPlace_Click(object sender, RoutedEventArgs e)
         {
