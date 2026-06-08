@@ -51,7 +51,7 @@
 - [ ] **8. `MmToFt`(304.8) 상수 4개 파일 독립 정의** — GeometryConverter, Civil3DCoordinate, ShearRebarFactory(인라인 `/304.8`), 일람표 파일들. 드리프트 위험.
   - **개선:** 단일 상수 또는 `UnitUtils.ConvertFromInternalUnits`.
 
-- [ ] **9. `BuildSheetTransforms`를 루프 안에서 매 시트 재구축** — `Commands/CreateLongitudinalRebarCommand.cs:131-147`
+- [x] **9. `BuildSheetTransforms`를 루프 안에서 매 시트 재구축** — `Commands/CreateLongitudinalRebarCommand.cs:131-147` ✅ 루프 밖으로 hoist
   - Transverse 명령은 루프 밖(49행)에서 올바르게 호출. Longi만 루프 안 재생성.
   - **개선:** 루프 밖으로 hoist.
 

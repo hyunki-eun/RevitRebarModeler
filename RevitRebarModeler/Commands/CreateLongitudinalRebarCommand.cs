@@ -94,6 +94,9 @@ namespace RevitRebarModeler.Commands
                 }
                 catch { }
 
+                // 시트 변환 맵은 loadedData에만 의존하므로 루프 밖에서 한 번만 구성 (구조도마다 재생성 방지)
+                var sheetTransforms = Civil3DCoordinate.BuildSheetTransforms(loadedData);
+
                 foreach (var kvp in sheetSettings)
                 {
                     string structureKey = kvp.Key;
@@ -137,7 +140,6 @@ namespace RevitRebarModeler.Commands
                         continue;
                     }
 
-                    var sheetTransforms = Civil3DCoordinate.BuildSheetTransforms(loadedData);
                     var cycleTx = sheetTransforms.TryGetValue(structureKey, out var ctx)
                         ? ctx : Civil3DCoordinate.CenterlineTransform.Identity;
                     var cycle2Rebars = loadedData.TransverseRebars
