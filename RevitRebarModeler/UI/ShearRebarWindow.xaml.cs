@@ -241,7 +241,7 @@ namespace RevitRebarModeler.UI
                     _autoTransCtcMap[sk] = ctc;
                 }
             }
-            catch { }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[ShearRebarWindow] 자동 맵 구성 실패: {ex.Message}"); }
         }
 
         /// <summary>Rebar 첫 centerline curve 시작점의 Y (ft) — 종방향 오프셋을 나타냄.</summary>
@@ -297,7 +297,7 @@ namespace RevitRebarModeler.UI
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[ShearRebarWindow] depth 맵 구성 실패: {ex.Message}"); }
         }
 
         private void BtnPlace_Click(object sender, RoutedEventArgs e)

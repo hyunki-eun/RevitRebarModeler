@@ -191,8 +191,10 @@ namespace RevitRebarModeler.Models
                     PopulateLabelsOnly(doc, rows);
                     tr.Commit();
                 }
-                catch
+                catch (Exception ex)
                 {
+                    // 라벨 기록 실패는 비치명적(배치 자체는 이미 완료)이나, 원인 파악용으로 로그
+                    System.Diagnostics.Debug.WriteLine($"[StampLabels] 라벨 기록 실패: {ex.Message}");
                     if (tr.HasStarted() && !tr.HasEnded()) tr.RollBack();
                 }
             }

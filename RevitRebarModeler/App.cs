@@ -47,7 +47,7 @@ namespace RevitRebarModeler
             {
                 string tabName = "지반터널부";
                 try { app.CreateRibbonTab(tabName); }
-                catch { /* 이미 존재 */ }
+                catch (Autodesk.Revit.Exceptions.ArgumentException) { /* 이미 존재하는 탭 — 무시 */ }
 
                 var panel = app.CreateRibbonPanel(tabName, "구조물");
                 string dllPath = Assembly.GetExecutingAssembly().Location;

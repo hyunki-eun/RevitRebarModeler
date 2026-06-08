@@ -79,7 +79,7 @@ namespace RevitRebarModeler.UI
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[TransverseRebarWindow] depth 맵 구성 실패: {ex.Message}"); }
             return map;
         }
 

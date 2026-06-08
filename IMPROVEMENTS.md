@@ -62,8 +62,7 @@
   - `app.SharedParametersFilename`(앱 전역) 덮어써 다른 프로젝트 영향; `File.WriteAllText(path,"")` 0바이트 파일은 유효 SP 헤더 없어 `OpenSharedParameterFile` 실패 가능.
   - **개선:** 진짜 미설정일 때만 변경+사후 복원, 최소 SP 헤더 기록.
 
-- [ ] **12. 광범위한 `catch {}`가 예외 삼킴** — `App.cs:41`(탭 중복만 의도했으나 전부 삼킴), `BuildAutoMapsFromRevit`/`BuildDepthMap` 전체 메서드 catch, `StampLabels` 등.
-  - **개선:** 기대 예외 타입만 좁게 catch, fallback 시 로그.
+- [x] **12. 광범위한 `catch {}`가 예외 삼킴** ✅ App.cs 탭 생성은 `Autodesk.Revit.Exceptions.ArgumentException`으로 협소화. 메서드 레벨 침묵 catch(StampLabels·Shear/Transverse 자동맵·depth맵)에 진단 Debug 로그 추가. (※ ds.Name 설정·후크 제거·임시파일 삭제 등 idiomatic best-effort 1줄 catch는 의도된 것이라 유지)
 
 ---
 
