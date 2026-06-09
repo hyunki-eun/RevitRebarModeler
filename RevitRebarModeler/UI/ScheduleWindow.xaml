@@ -1,7 +1,7 @@
 <Window x:Class="RevitRebarModeler.UI.ScheduleWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="보강철근 수량 일람표" Width="1280" Height="780" MinWidth="1000" MinHeight="600"
+        Title="보강철근 수량 일람표" Width="1280" Height="720" MinWidth="1000" MinHeight="560"
         WindowStartupLocation="CenterScreen"
         Background="#F5F5F5" FontFamily="맑은 고딕">
 

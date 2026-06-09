@@ -7,7 +7,7 @@
 ; ============================================================================
 
 #define MyAppName       "RevitRebarModeler"
-#define MyAppVersion    "1.0.7"
+#define MyAppVersion    "1.0.8"
 #define MyAppPublisher  "Geotechnical Tunnel Division R&D"
 #define MyAppDescription "Revit 보강철근 모델링 / 수량 일람표 애드인 (Revit 2024)"
 #define RevitVersion    "2024"
